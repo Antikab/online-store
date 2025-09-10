@@ -1,0 +1,135 @@
+{
+  "products": {
+    "p1": {
+      "id": "p1",
+      "slug": "hoodie-classic",
+      "isActive": true,
+      "title": "Hoodie Classic",
+      "gender": "men",
+      "category": "hoodies",
+      "price": 59.9,
+      "colors": ["black", "gray"],
+      "sizes": ["S", "M", "L", "XL"],
+      "imageUrls": [
+        "https://picsum.photos/id/10/900/900",
+        "https://picsum.photos/id/11/900/900",
+        "https://picsum.photos/id/12/900/900",
+        "https://picsum.photos/id/13/900/900"
+      ],
+      "description": "Базовое худи из хлопка.",
+      "extra": { "Материал": "100% хлопок", "Страна": "Португалия" },
+      "videoUrl": "",
+      "createdAt": 1730000000001
+    },
+    "p2": {
+      "id": "p2",
+      "slug": "tshirt-oversize",
+      "isActive": true,
+      "title": "T-Shirt Oversize",
+      "gender": "men",
+      "category": "tshirts",
+      "price": 29.0,
+      "colors": ["white", "navy"],
+      "sizes": ["S", "M", "L"],
+      "imageUrls": [
+        "https://picsum.photos/id/20/900/900",
+        "https://picsum.photos/id/21/900/900",
+        "https://picsum.photos/id/22/900/900"
+      ],
+      "description": "Оверсайз футболка.",
+      "extra": { "Плотность": "220 г/м2" },
+      "createdAt": 1730000000002
+    },
+    "p3": {
+      "id": "p3",
+      "slug": "dress-summer",
+      "isActive": true,
+      "title": "Dress Summer",
+      "gender": "women",
+      "category": "dresses",
+      "price": 89.0,
+      "colors": ["red", "green"],
+      "sizes": ["XS", "S", "M"],
+      "imageUrls": [
+        "https://picsum.photos/id/30/900/900",
+        "https://picsum.photos/id/31/900/900",
+        "https://picsum.photos/id/32/900/900",
+        "https://picsum.photos/id/33/900/900"
+      ],
+      "description": "Летнее платье.",
+      "extra": { "Материал": "Лён" },
+      "videoUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+      "createdAt": 1730000000003
+    },
+    "p4": {
+      "id": "p4",
+      "slug": "jeans-straight",
+      "isActive": true,
+      "title": "Jeans Straight",
+      "gender": "women",
+      "category": "jeans",
+      "price": 74.5,
+      "colors": ["blue"],
+      "sizes": ["24", "25", "26", "27", "28"],
+      "imageUrls": ["https://picsum.photos/id/40/900/900", "https://picsum.photos/id/41/900/900"],
+      "description": "Прямые джинсы.",
+      "extra": { "Состав": "98% хлопок, 2% эластан" },
+      "createdAt": 1730000000004
+    },
+    "p5": {
+      "id": "p5",
+      "slug": "sneakers-runner",
+      "isActive": true,
+      "title": "Sneakers Runner",
+      "gender": "men",
+      "category": "shoes",
+      "price": 119.0,
+      "colors": ["white", "black"],
+      "sizes": ["40", "41", "42", "43", "44"],
+      "imageUrls": ["https://picsum.photos/id/50/900/900", "https://picsum.photos/id/51/900/900"],
+      "description": "Кроссовки для города.",
+      "extra": { "Подошва": "EVA" },
+      "createdAt": 1730000000005
+    },
+    "p6": {
+      "id": "p6",
+      "slug": "coat-wool",
+      "isActive": true,
+      "title": "Coat Wool",
+      "gender": "women",
+      "category": "outerwear",
+      "price": 199.0,
+      "colors": ["camel", "black"],
+      "sizes": ["S", "M", "L"],
+      "imageUrls": [
+        "https://picsum.photos/id/60/900/900",
+        "https://picsum.photos/id/61/900/900",
+        "https://picsum.photos/id/62/900/900"
+      ],
+      "description": "Шерстяное пальто.",
+      "extra": { "Состав": "80% шерсть, 20% полиэстер" },
+      "createdAt": 1730000000006
+    }
+  },
+  "categories": {
+    "men": {
+      "hoodies": { "title": "Hoodies", "cover": "https://picsum.photos/id/101/900/500" },
+      "tshirts": { "title": "T-Shirts", "cover": "https://picsum.photos/id/102/900/500" },
+      "shoes": { "title": "Shoes", "cover": "https://picsum.photos/id/103/900/500" }
+    },
+    "women": {
+      "dresses": { "title": "Dresses", "cover": "https://picsum.photos/id/104/900/500" },
+      "jeans": { "title": "Jeans", "cover": "https://picsum.photos/id/105/900/500" },
+      "outerwear": { "title": "Outerwear", "cover": "https://picsum.photos/id/106/900/500" }
+    }
+  },
+  "coupons": {
+    "SAVE20": { "active": true, "percent": 20 },
+    "WELCOME": { "active": true, "percent": 15 },
+    "BLACKFRIDAY": { "active": true, "percent": 20 }
+  },
+  "users": {},
+  "wishlist": {},
+  "cart": {},
+  "orders": {}
+}
