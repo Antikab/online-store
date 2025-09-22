@@ -1,7 +1,10 @@
-<!-- components/Header.vue -->
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth'
+import { storeToRefs } from 'pinia'
+
 const auth = useAuthStore()
+const { isAuthed, email } = storeToRefs(auth)
+
 async function onLogout() {
   await auth.logout({ clearGuest: true })
 }
@@ -14,14 +17,14 @@ async function onLogout() {
       <RouterLink to="/catalog/men">Men</RouterLink>
       <RouterLink to="/catalog/women">Women</RouterLink>
       <RouterLink to="/wishlist">Wishlist</RouterLink>
-      <RouterLink v-if="auth.isAuthed" to="/orders">Orders</RouterLink>
+      <RouterLink v-if="isAuthed" to="/orders">Orders</RouterLink>
       <RouterLink to="/cart">Cart</RouterLink>
     </nav>
 
     <div class="spacer" />
 
-    <template v-if="auth.isAuthed">
-      <span class="email">{{ auth.user?.email }}</span>
+    <template v-if="isAuthed">
+      <span class="email">{{ email }}</span>
       <button @click="onLogout">Выйти</button>
     </template>
     <template v-else>
@@ -54,5 +57,6 @@ button {
   background: #fff;
   padding: 6px 10px;
   border-radius: 6px;
+  cursor: pointer;
 }
 </style>

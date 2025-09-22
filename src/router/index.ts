@@ -12,38 +12,34 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/auth/Register.vue'),
     meta: { guestOnly: true }
   },
+
+  // Запрос письма
   {
     path: '/reset-password',
     component: () => import('@/views/auth/ResetPassword.vue'),
     meta: { guestOnly: true }
   },
+
+  // Установка нового пароля по ссылке из письма (oobCode)
   {
     path: '/change-password',
     component: () => import('@/views/auth/ChangePassword.vue'),
+    meta: { guestOnly: true }
+  },
+
+  // Смена пароля в кабинете (reauth)
+  {
+    path: '/account/change-password',
+    component: () => import('@/views/account/ChangePassword.vue'),
     meta: { requiresAuth: true }
   },
 
-  {
-    path: '/catalog/:gender(men|women)',
-    component: () => import('@/views/Catalog.vue')
-  },
-  {
-    path: '/product/:id',
-    component: () => import('@/views/Product.vue')
-  },
-  {
-    path: '/cart',
-    component: () => import('@/views/Cart.vue')
-  },
-  {
-    path: '/wishlist',
-    component: () => import('@/views/Wishlist.vue')
-  },
-  {
-    path: '/orders',
-    component: () => import('@/views/Orders.vue'),
-    meta: { requiresAuth: true }
-  },
+  { path: '/catalog/:gender(men|women)', component: () => import('@/views/Catalog.vue') },
+  { path: '/product/:id', component: () => import('@/views/Product.vue') },
+  { path: '/cart', component: () => import('@/views/Cart.vue') },
+  { path: '/wishlist', component: () => import('@/views/Wishlist.vue') },
+
+  { path: '/orders', component: () => import('@/views/Orders.vue'), meta: { requiresAuth: true } },
   {
     path: '/checkout',
     component: () => import('@/views/Checkout.vue'),
@@ -54,10 +50,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Success.vue'),
     meta: { requiresAuth: true }
   },
-  {
-    path: '/:pathMatch(.*)*',
-    component: () => import('@/views/NotFound.vue')
-  }
+
+  { path: '/:pathMatch(.*)*', component: () => import('@/views/NotFound.vue') }
 ]
 
 const router = createRouter({ history: createWebHistory(import.meta.env.BASE_URL), routes })
@@ -65,6 +59,7 @@ const router = createRouter({ history: createWebHistory(import.meta.env.BASE_URL
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
+  // дождаться onAuthStateChanged один раз
   if (!auth.ready) {
     await new Promise<void>((resolve) => {
       const stop = watch(
