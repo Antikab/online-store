@@ -1,23 +1,52 @@
 // stores/cart.ts
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { auth, db } from '@/firebase'
-import { onAuthStateChanged } from 'firebase/auth'
-import { ref as dbRef, onValue, set, update, remove, get } from 'firebase/database'
+import { defineStore, storeToRefs } from 'pinia'
+import { computed, ref, watch, type WatchStopHandle } from 'vue'
+import { supabase } from '@/supabase'
+import { useAuthStore } from '@/stores/auth'
 import type { Product, CartItem, CartItemKey } from '@/types'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+
+type CartRow = {
+  id: string
+  user_id: string
+  product_id: string
+  color: string
+  size: string
+  qty: number
+  added_at: string | number | null
+  price: number
+  title: string
+  image: string | null
+}
 
 const GUEST_KEY = 'guest_cart_v1'
+
 function keyOf(k: CartItemKey) {
   return `${k.productId}_${k.color}_${k.size}`
 }
 
+function mapRow(row: CartRow): CartItem {
+  const addedAt =
+    typeof row.added_at === 'string' ? Date.parse(row.added_at) : Number(row.added_at ?? Date.now())
+  return {
+    productId: row.product_id,
+    color: row.color,
+    size: row.size,
+    qty: Number(row.qty ?? 0),
+    addedAt: Number.isFinite(addedAt) ? addedAt : Date.now(),
+    price: Number(row.price ?? 0),
+    title: row.title,
+    image: row.image ?? ''
+  }
+}
+
 export const useCartStore = defineStore('cart', () => {
-  // единый источник правды для UI
   const items = ref<Record<string, CartItem>>({})
   const isGuest = ref(true)
-  let rtdbUnsub: (() => void) | null = null
 
-  // ===== Helpers: guest storage =====
+  let channel: RealtimeChannel | null = null
+  let stopAuthWatch: WatchStopHandle | null = null
+
   function loadGuest() {
     try {
       const raw = localStorage.getItem(GUEST_KEY)
@@ -26,69 +55,83 @@ export const useCartStore = defineStore('cart', () => {
       items.value = {}
     }
   }
+
   function saveGuest() {
     localStorage.setItem(GUEST_KEY, JSON.stringify(items.value))
   }
+
   function clearGuest() {
     localStorage.removeItem(GUEST_KEY)
     items.value = {}
   }
 
-  // ===== Helpers: firebase (per-user cart under users/{uid}/cart) =====
-  function bindUserCart(uid: string) {
-    unbind()
-    const r = dbRef(db, `users/${uid}/cart`)
-    const unsub = onValue(r, (snap) => {
-      items.value = snap.val() || {}
-    })
-    rtdbUnsub = () => unsub()
+  async function refresh(uid: string) {
+    const { data, error } = await supabase.from('cart_items').select('*').eq('user_id', uid)
+    if (error) throw error
+    const rows = (data as CartRow[] | null) ?? []
+    const next: Record<string, CartItem> = {}
+    for (const row of rows) {
+      next[row.id] = mapRow(row)
+    }
+    items.value = next
   }
-  function unbind() {
-    if (rtdbUnsub) {
-      rtdbUnsub()
-      rtdbUnsub = null
+
+  async function bindUserCart(uid: string) {
+    await refresh(uid)
+    channel = supabase
+      .channel(`cart:${uid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cart_items', filter: `user_id=eq.${uid}` },
+        async (payload) => {
+          try {
+            if (payload.eventType === 'DELETE') {
+              const deletedId = (payload.old as CartRow | null)?.id
+              if (deletedId) delete items.value[deletedId]
+              return
+            }
+            const row = payload.new as CartRow | null
+            if (row) items.value[row.id] = mapRow(row)
+          } catch (e) {
+            console.error('Cart realtime update failed', e)
+          }
+        }
+      )
+      .subscribe()
+  }
+
+  async function unbind() {
+    if (channel) {
+      await channel.unsubscribe()
+      channel = null
     }
   }
 
-  // ===== Public computed =====
   const list = computed(() => Object.values(items.value))
   const subtotal = computed(() => list.value.reduce((s, i) => s + i.price * i.qty, 0))
 
-  // ===== Sync guest -> user on login =====
   async function syncGuestToUser(uid: string) {
-    // слить guest items в RTDB, увеличивая qty если совпал ключ
-    const guest = { ...items.value } // items сейчас = guest, т.к. isGuest=true
+    const guest = { ...items.value }
     if (!Object.keys(guest).length) return
 
-    // пройдёмся по всем позициям
-    for (const [id, it] of Object.entries(guest)) {
-      const pathRef = dbRef(db, `users/${uid}/cart/${id}`)
+    const rows = Object.entries(guest).map(([id, it]) => ({
+      id,
+      user_id: uid,
+      product_id: it.productId,
+      color: it.color,
+      size: it.size,
+      qty: it.qty,
+      added_at: new Date(it.addedAt).toISOString(),
+      price: it.price,
+      title: it.title,
+      image: it.image
+    }))
 
-      // читаем текущее состояние товара в пользовательской корзине
-      const snap = await get(pathRef)
-      if (snap.exists()) {
-        const server = snap.val() as CartItem
-        // суммируем qty
-        await update(pathRef, { qty: (server.qty ?? 0) + (it.qty ?? 0) })
-      } else {
-        // если нет — просто устанавливаем позицию
-        await set(pathRef, {
-          productId: it.productId,
-          color: it.color,
-          size: it.size,
-          qty: it.qty ?? 0,
-          addedAt: it.addedAt ?? Date.now(),
-          price: it.price,
-          title: it.title,
-          image: it.image
-        })
-      }
-    }
-
+    const { error } = await supabase.from('cart_items').upsert(rows, { onConflict: 'id' })
+    if (error) throw error
     clearGuest()
   }
 
-  // ===== Public actions =====
   async function add(p: Product, color: string, size: string, qty = 1) {
     const id = keyOf({ productId: p.id, color, size })
     const base: CartItem = {
@@ -107,10 +150,24 @@ export const useCartStore = defineStore('cart', () => {
       items.value[id] = existing ? { ...existing, qty: existing.qty + qty } : base
       saveGuest()
     } else {
-      const uid = auth.currentUser!.uid
-      const path = `users/${uid}/cart/${id}`
+      const auth = useAuthStore()
+      const uid = auth.uid
+      if (!uid) throw new Error('auth required')
       const existing = items.value[id]
-      await set(dbRef(db, path), existing ? { ...existing, qty: existing.qty + qty } : base)
+      const payload = {
+        id,
+        user_id: uid,
+        product_id: p.id,
+        color,
+        size,
+        qty: existing ? existing.qty + qty : qty,
+        added_at: new Date(existing?.addedAt ?? base.addedAt).toISOString(),
+        price: p.price,
+        title: p.title,
+        image: p.imageUrls?.[0] || ''
+      }
+      const { error } = await supabase.from('cart_items').upsert(payload, { onConflict: 'id' })
+      if (error) throw error
     }
   }
 
@@ -122,8 +179,15 @@ export const useCartStore = defineStore('cart', () => {
       items.value[id] = { ...existing, qty }
       saveGuest()
     } else {
-      const uid = auth.currentUser!.uid
-      await update(dbRef(db, `users/${uid}/cart/${id}`), { qty })
+      const auth = useAuthStore()
+      const uid = auth.uid
+      if (!uid) throw new Error('auth required')
+      const { error } = await supabase
+        .from('cart_items')
+        .update({ qty })
+        .eq('user_id', uid)
+        .eq('id', id)
+      if (error) throw error
     }
   }
 
@@ -132,8 +196,11 @@ export const useCartStore = defineStore('cart', () => {
       delete items.value[id]
       saveGuest()
     } else {
-      const uid = auth.currentUser!.uid
-      await remove(dbRef(db, `users/${uid}/cart/${id}`))
+      const auth = useAuthStore()
+      const uid = auth.uid
+      if (!uid) throw new Error('auth required')
+      const { error } = await supabase.from('cart_items').delete().eq('user_id', uid).eq('id', id)
+      if (error) throw error
     }
   }
 
@@ -141,45 +208,56 @@ export const useCartStore = defineStore('cart', () => {
     if (isGuest.value) {
       clearGuest()
     } else {
-      const uid = auth.currentUser!.uid
-      await set(dbRef(db, `users/${uid}/cart`), null)
+      const auth = useAuthStore()
+      const uid = auth.uid
+      if (!uid) throw new Error('auth required')
+      const { error } = await supabase.from('cart_items').delete().eq('user_id', uid)
+      if (error) throw error
     }
   }
 
-  // ===== Init / auth watcher =====
   function start() {
-    // первичный режим — гость
-    isGuest.value = !auth.currentUser
-    if (isGuest.value) loadGuest()
-    else bindUserCart(auth.currentUser!.uid)
+    if (stopAuthWatch) return
+    const auth = useAuthStore()
+    const { uid } = storeToRefs(auth)
 
-    onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        // переход гость -> пользователь: слить guest в RTDB, затем подписаться на RTDB
-        if (isGuest.value) await syncGuestToUser(u.uid)
-        isGuest.value = false
-        bindUserCart(u.uid)
-      } else {
-        // пользователь -> гость
-        unbind()
-        isGuest.value = true
-        loadGuest()
-      }
-    })
+    stopAuthWatch = watch(
+      uid,
+      async (newUid, oldUid) => {
+        if (newUid) {
+          if (!oldUid && isGuest.value) {
+            try {
+              await syncGuestToUser(newUid)
+            } catch (e) {
+              console.error('Failed to merge guest cart', e)
+            }
+          }
+          isGuest.value = false
+          await unbind()
+          try {
+            await bindUserCart(newUid)
+          } catch (e) {
+            console.error('Failed to bind user cart', e)
+          }
+        } else {
+          await unbind()
+          isGuest.value = true
+          loadGuest()
+        }
+      },
+      { immediate: true }
+    )
   }
 
-  // удобный id-комбайнер для UI
   function compoundId(productId: string, color: string, size: string) {
     return keyOf({ productId, color, size })
   }
 
   return {
-    // state
     items,
     list,
     subtotal,
     isGuest,
-    // actions
     start,
     add,
     setQty,

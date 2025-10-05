@@ -1,30 +1,73 @@
 // stores/products.ts
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { db } from '@/firebase'
-import { ref as dbRef, onValue, get } from 'firebase/database'
+import { computed, ref } from 'vue'
+import { supabase } from '@/supabase'
 import type { Product, Gender } from '@/types'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+
+type ProductRow = {
+  id: string
+  title: string
+  gender: Gender
+  category: string
+  price: number
+  colors: string[] | null
+  sizes: string[] | null
+  image_urls: string[] | null
+  description: string | null
+  extra: Record<string, string> | null
+  video_url: string | null
+  created_at: string | null
+  is_active?: boolean | null
+}
+
+function mapProduct(row: ProductRow): Product {
+  return {
+    id: row.id,
+    title: row.title,
+    gender: row.gender,
+    category: row.category,
+    price: Number(row.price ?? 0),
+    colors: row.colors ?? [],
+    sizes: row.sizes ?? [],
+    imageUrls: row.image_urls ?? [],
+    description: row.description ?? '',
+    extra: row.extra ?? undefined,
+    videoUrl: row.video_url ?? undefined,
+    createdAt: row.created_at ? Date.parse(row.created_at) : Date.now()
+  }
+}
 
 export const useProductsStore = defineStore('products', () => {
   const items = ref<Product[]>([])
   const loaded = ref(false)
+  let channel: RealtimeChannel | null = null
 
-  // единый unsubscribe для onValue
-  let unsub: (() => void) | null = null
+  async function refresh() {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    const rows = (data as ProductRow[] | null) ?? []
+    items.value = rows.filter((p) => p.is_active ?? true).map(mapProduct)
+    loaded.value = true
+  }
 
   async function init() {
-    if (unsub) return
-    const r = dbRef(db, 'products')
+    if (channel) return
+    await refresh()
 
-    unsub = onValue(r, (snap) => {
-      const val = snap.val() || {}
-      // важное изменение: возвращаем id из ключа RTDB
-      items.value = Object.entries(val).map(([id, p]: [string, any]) => ({
-        id,
-        ...(p as Omit<Product, 'id'>)
-      }))
-      loaded.value = true
-    })
+    channel = supabase
+      .channel('products')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
+        try {
+          await refresh()
+        } catch (e) {
+          console.error('Failed to refresh products', e)
+        }
+      })
+      .subscribe()
   }
 
   const categories = computed(() => Array.from(new Set(items.value.map((p) => p.category))).sort())
@@ -42,10 +85,10 @@ export const useProductsStore = defineStore('products', () => {
   }
 
   async function fetchOne(id: string) {
-    // запасной метод при прямом заходе на /product/:id
-    const snap = await get(dbRef(db, `products/${id}`))
-    const v = snap.val()
-    return v ? ({ id, ...(v as Omit<Product, 'id'>) } as Product) : null
+    const { data, error } = await supabase.from('products').select('*').eq('id', id).maybeSingle()
+    if (error) throw error
+    const row = (data as ProductRow | null) ?? null
+    return row ? mapProduct(row) : null
   }
 
   function filtered(opts: {
@@ -68,7 +111,6 @@ export const useProductsStore = defineStore('products', () => {
     })
   }
 
-  // простая пагинация на клиенте
   function paginate(list: Product[], page: number, perPage: number) {
     const start = (page - 1) * perPage
     return list.slice(start, start + perPage)

@@ -1,19 +1,25 @@
 // stores/wishlist.ts
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { auth, db } from '@/firebase'
-import { onAuthStateChanged } from 'firebase/auth'
-import { ref as dbRef, onValue, set, remove, update } from 'firebase/database'
+import { defineStore, storeToRefs } from 'pinia'
+import { computed, ref, watch, type WatchStopHandle } from 'vue'
+import { supabase } from '@/supabase'
+import { useAuthStore } from '@/stores/auth'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+
+type WishlistRow = {
+  user_id: string
+  product_id: string
+  created_at: string | number | null
+}
 
 const GUEST_KEY = 'guest_wishlist_v1'
 
 export const useWishlistStore = defineStore('wishlist', () => {
-  // для UI используем Set id-шников
   const ids = ref<Set<string>>(new Set())
   const isGuest = ref(true)
-  let rtdbUnsub: (() => void) | null = null
 
-  // ===== guest storage =====
+  let channel: RealtimeChannel | null = null
+  let stopAuthWatch: WatchStopHandle | null = null
+
   function loadGuest() {
     try {
       const raw = localStorage.getItem(GUEST_KEY)
@@ -23,85 +29,133 @@ export const useWishlistStore = defineStore('wishlist', () => {
       ids.value = new Set()
     }
   }
+
   function saveGuest() {
     localStorage.setItem(GUEST_KEY, JSON.stringify(Array.from(ids.value)))
   }
+
   function clearGuest() {
     localStorage.removeItem(GUEST_KEY)
     ids.value = new Set()
   }
 
-  // ===== firebase bind =====
-  function bindUser(uid: string) {
-    unbind()
-    const r = dbRef(db, `users/${uid}/wishlist`)
-    const unsub = onValue(r, (snap) => {
-      const val = snap.val() || {}
-      ids.value = new Set(Object.keys(val))
-    })
-    rtdbUnsub = () => unsub()
+  async function refresh(uid: string) {
+    const { data, error } = await supabase.from('wishlists').select('product_id').eq('user_id', uid)
+    if (error) throw error
+    const rows = (data as WishlistRow[] | null) ?? []
+    ids.value = new Set(rows.map((r) => r.product_id))
   }
-  function unbind() {
-    if (rtdbUnsub) {
-      rtdbUnsub()
-      rtdbUnsub = null
+
+  async function bindUser(uid: string) {
+    await refresh(uid)
+    channel = supabase
+      .channel(`wishlist:${uid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wishlists', filter: `user_id=eq.${uid}` },
+        (payload) => {
+          try {
+            if (payload.eventType === 'DELETE') {
+              const removed = (payload.old as WishlistRow | null)?.product_id
+              if (removed) ids.value.delete(removed)
+              return
+            }
+            const row = payload.new as WishlistRow | null
+            if (row?.product_id) ids.value.add(row.product_id)
+          } catch (e) {
+            console.error('Wishlist realtime update failed', e)
+          }
+        }
+      )
+      .subscribe()
+  }
+
+  async function unbind() {
+    if (channel) {
+      await channel.unsubscribe()
+      channel = null
     }
   }
 
-  // ===== sync guest -> user on login =====
   async function syncGuestToUser(uid: string) {
     const arr = Array.from(ids.value)
     if (!arr.length) return
-    const updates: Record<string, any> = {}
-    for (const id of arr) {
-      updates[`users/${uid}/wishlist/${id}`] = true
-    }
-    // одним батчем
-    await update(dbRef(db), updates)
+    const rows = arr.map((productId) => ({
+      user_id: uid,
+      product_id: productId,
+      created_at: new Date().toISOString()
+    }))
+    const { error } = await supabase
+      .from('wishlists')
+      .upsert(rows, { onConflict: 'user_id,product_id' })
+    if (error) throw error
     clearGuest()
   }
 
-  // ===== public computed & helpers =====
   const listIds = computed(() => Array.from(ids.value))
   function isIn(id: string) {
     return ids.value.has(id)
   }
 
-  // ===== actions =====
   async function toggle(id: string) {
     if (isGuest.value) {
       if (ids.value.has(id)) ids.value.delete(id)
       else ids.value.add(id)
       saveGuest()
     } else {
-      const uid = auth.currentUser!.uid
-      const node = dbRef(db, `users/${uid}/wishlist/${id}`)
+      const auth = useAuthStore()
+      const uid = auth.uid
+      if (!uid) throw new Error('auth required')
       if (ids.value.has(id)) {
-        await remove(node)
+        const { error } = await supabase
+          .from('wishlists')
+          .delete()
+          .eq('user_id', uid)
+          .eq('product_id', id)
+        if (error) throw error
       } else {
-        await set(node, true)
+        const { error } = await supabase
+          .from('wishlists')
+          .upsert(
+            { user_id: uid, product_id: id, created_at: new Date().toISOString() },
+            { onConflict: 'user_id,product_id' }
+          )
+        if (error) throw error
       }
-      // RTDB onValue сам обновит ids
     }
   }
 
   function start() {
-    // первичный режим
-    isGuest.value = !auth.currentUser
-    if (isGuest.value) loadGuest()
-    else bindUser(auth.currentUser!.uid)
+    if (stopAuthWatch) return
+    const auth = useAuthStore()
+    const { uid } = storeToRefs(auth)
 
-    onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        if (isGuest.value) await syncGuestToUser(u.uid)
-        isGuest.value = false
-        bindUser(u.uid)
-      } else {
-        unbind()
-        isGuest.value = true
-        loadGuest()
-      }
-    })
+    stopAuthWatch = watch(
+      uid,
+      async (newUid, oldUid) => {
+        if (newUid) {
+          if (!oldUid && isGuest.value) {
+            try {
+              await syncGuestToUser(newUid)
+            } catch (e) {
+              console.error('Failed to merge guest wishlist', e)
+            }
+          }
+          isGuest.value = false
+          await unbind()
+          try {
+            await bindUser(newUid)
+          } catch (e) {
+            console.error('Failed to bind wishlist', e)
+          }
+        } else {
+          await unbind()
+          isGuest.value = true
+          loadGuest()
+        }
+      },
+      { immediate: true }
+    )
   }
 
   return { ids, listIds, isGuest, isIn, toggle, start }

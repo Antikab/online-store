@@ -3,13 +3,13 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { FirebaseError } from 'firebase/app'
+import { AuthError } from '@supabase/supabase-js'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 
-const oobCode = ref<string | null>(null)
+const recoveryCode = ref<string | null>(null)
 const stage = ref<'checking' | 'ok' | 'done' | 'error'>('checking')
 const err = ref<string | null>(null)
 const busy = ref(false)
@@ -18,31 +18,36 @@ const pw = ref('')
 const pw2 = ref('')
 
 function msg(e: unknown) {
-  if (e instanceof FirebaseError) {
-    switch (e.code) {
-      case 'auth/expired-action-code':
-        return 'Ссылка устарела. Запросите письмо ещё раз.'
-      case 'auth/invalid-action-code':
-        return 'Ссылка некорректна или уже использована.'
-      case 'auth/weak-password':
-        return 'Слишком простой пароль.'
-      default:
-        return e.message || e.code
-    }
+  if (e instanceof AuthError) {
+    const text = e.message?.toLowerCase() ?? ''
+    if (text.includes('expired')) return 'Ссылка устарела. Запросите письмо ещё раз.'
+    if (text.includes('invalid') || text.includes('code'))
+      return 'Ссылка некорректна или уже использована.'
+    if (text.includes('weak password')) return 'Слишком простой пароль.'
+    return e.message || 'Ошибка восстановления пароля'
   }
+  if (e instanceof Error) return e.message
   return String(e)
 }
 
 onMounted(async () => {
-  oobCode.value =
-    (route.query.oobCode as string) ?? new URLSearchParams(location.search).get('oobCode')
+  const params = new URLSearchParams(location.search)
+  const codeParam = (route.query.code as string) ?? params.get('code')
+  const typeParam = (route.query.type as string) ?? params.get('type')
+
   try {
-    if (!oobCode.value) throw new Error('Отсутствует код подтверждения')
-    await auth.verifyResetCode(oobCode.value)
-    // аккуратно убираем код из URL (не делаем редирект)
+    if (typeParam !== 'recovery') throw new Error('Некорректная ссылка')
+    if (!codeParam) throw new Error('Отсутствует код подтверждения')
+    await auth.verifyResetCode(codeParam)
+    recoveryCode.value = codeParam
+    // аккуратно убираем параметры из URL
     const url = new URL(window.location.href)
-    url.searchParams.delete('oobCode')
-    url.searchParams.delete('mode')
+    url.searchParams.delete('code')
+    url.searchParams.delete('type')
+    url.searchParams.delete('access_token')
+    url.searchParams.delete('refresh_token')
+    url.searchParams.delete('token_type')
+    url.searchParams.delete('expires_in')
     url.searchParams.delete('lang')
     window.history.replaceState({}, '', url.toString())
     stage.value = 'ok'
@@ -55,11 +60,11 @@ onMounted(async () => {
 const canSubmit = () => !busy.value && pw.value.length >= 8 && pw.value === pw2.value
 
 async function submit() {
-  if (!oobCode.value || !canSubmit()) return
+  if (!recoveryCode.value || !canSubmit()) return
   busy.value = true
   err.value = null
   try {
-    await auth.confirmResetPassword(oobCode.value, pw.value)
+    await auth.confirmResetPassword(recoveryCode.value, pw.value)
     stage.value = 'done'
     setTimeout(() => router.push('/login'), 1200)
   } catch (e) {

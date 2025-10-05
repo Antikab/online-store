@@ -1,43 +1,26 @@
 // stores/auth.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { auth, db } from '@/firebase'
-import { FirebaseError } from 'firebase/app'
-import {
-  onAuthStateChanged,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail,
-  updatePassword,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-  signOut,
-  type User,
-  type Unsubscribe,
-  verifyPasswordResetCode,
-  confirmPasswordReset
-} from 'firebase/auth'
-import { ref as dbRef, set, update } from 'firebase/database'
+import { supabase } from '@/supabase'
+import { AuthError, type User } from '@supabase/supabase-js'
 
 type PublicUser = { uid: string; email: string | null }
 
+type MaybeWithMessage = { message?: string }
+
 function toErrorMessage(e: unknown): string {
-  if (e instanceof FirebaseError) {
-    switch (e.code) {
-      case 'auth/invalid-email':
-        return 'Некорректный e-mail'
-      case 'auth/user-not-found':
-        return 'Пользователь не найден'
-      case 'auth/email-already-in-use':
-        return 'E-mail уже используется'
-      case 'auth/wrong-password':
-        return 'Неверный пароль'
-      case 'auth/too-many-requests':
-        return 'Слишком много попыток. Повторите позже'
-      default:
-        return e.message || e.code
-    }
+  if (e instanceof AuthError) {
+    const msg = e.message?.toLowerCase() ?? ''
+    if (msg.includes('invalid login') || msg.includes('invalid email or password'))
+      return 'Неверный e-mail или пароль'
+    if (msg.includes('email not confirmed')) return 'Подтвердите e-mail, чтобы войти'
+    if (msg.includes('password should be at least')) return 'Слишком простой пароль'
+    if (msg.includes('already registered')) return 'E-mail уже используется'
+    if (msg.includes('invalid email')) return 'Некорректный e-mail'
+    return e.message || 'Ошибка авторизации'
   }
+  if (typeof e === 'object' && e && 'message' in e)
+    return String((e as MaybeWithMessage).message || '')
   if (e instanceof Error) return e.message
   return String(e)
 }
@@ -47,30 +30,45 @@ const RESET_REDIRECT_URL = import.meta.env.DEV
   : `${window.location.origin}/change-password`
 
 export const useAuthStore = defineStore('auth', () => {
-  // state
   const user = ref<PublicUser | null>(null)
   const loading = ref(false)
-  const error = ref('') // последнее сообщение об ошибке
+  const error = ref('')
   const ready = ref(false)
-  let unsub: Unsubscribe | null = null
 
-  // getters
+  let unsub: (() => void) | null = null
+
   const isAuthed = computed(() => !!user.value)
   const uid = computed(() => user.value?.uid ?? null)
   const email = computed(() => user.value?.email ?? null)
 
-  // internal
-  function setFromFirebase(u: User | null) {
-    user.value = u ? { uid: u.uid, email: u.email } : null
+  function setFromSupabase(u: User | null) {
+    user.value = u ? { uid: u.id, email: u.email ?? null } : null
   }
 
-  function initAuthWatcher() {
+  async function initAuthWatcher() {
     if (unsub) return
-    unsub = onAuthStateChanged(auth, (u) => {
-      setFromFirebase(u)
+
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      setFromSupabase(data.session?.user ?? null)
+    } catch (e) {
+      console.error('Failed to restore session', e)
+    } finally {
+      ready.value = true
+    }
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setFromSupabase(session?.user ?? null)
       ready.value = true
     })
+
+    unsub = () => {
+      listener.subscription.unsubscribe()
+      unsub = null
+    }
   }
+
   function disposeAuthWatcher() {
     if (unsub) {
       unsub()
@@ -78,19 +76,30 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // actions
   async function register(rawEmail: string, password: string) {
     loading.value = true
     error.value = ''
     try {
       const normEmail = rawEmail.trim().toLowerCase()
-      const res = await createUserWithEmailAndPassword(auth, normEmail, password)
-      await set(dbRef(db, `users/${res.user.uid}/profile`), {
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email: normEmail,
-        createdAt: Date.now()
+        password
       })
-      setFromFirebase(res.user)
-    } catch (e: unknown) {
+      if (signUpError) throw signUpError
+      const signedUser = data.user
+      if (signedUser) {
+        setFromSupabase(signedUser)
+        const { error: profileError } = await supabase.from('profiles').upsert(
+          {
+            id: signedUser.id,
+            email: normEmail,
+            created_at: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        )
+        if (profileError) throw profileError
+      }
+    } catch (e) {
       error.value = toErrorMessage(e)
       throw e
     } finally {
@@ -103,9 +112,13 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = ''
     try {
       const normEmail = rawEmail.trim().toLowerCase()
-      const res = await signInWithEmailAndPassword(auth, normEmail, password)
-      setFromFirebase(res.user)
-    } catch (e: unknown) {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: normEmail,
+        password
+      })
+      if (signInError) throw signInError
+      setFromSupabase(data.user ?? null)
+    } catch (e) {
       error.value = toErrorMessage(e)
       throw e
     } finally {
@@ -113,38 +126,48 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Отправка письма сброса. В UI показываем «письмо отправлено» независимо от результата. */
   async function resetPassword(rawEmail: string) {
     loading.value = true
     error.value = ''
     try {
-      auth.languageCode = 'ru'
       const normEmail = rawEmail.trim().toLowerCase()
-      await sendPasswordResetEmail(auth, normEmail, {
-        url: RESET_REDIRECT_URL,
-        handleCodeInApp: true
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(normEmail, {
+        redirectTo: RESET_REDIRECT_URL
       })
-    } catch (e: unknown) {
-      error.value = toErrorMessage(e) // лог
+      if (resetError) throw resetError
+    } catch (e) {
+      error.value = toErrorMessage(e)
     } finally {
       loading.value = false
     }
   }
 
-  /** Смена пароля для залогиненного пользователя (reauth). */
   async function changePasswordWithReauth(currentPassword: string, newPassword: string) {
-    if (!auth.currentUser || !auth.currentUser.email) throw new Error('Not authenticated')
+    if (!email.value) throw new Error('Not authenticated')
 
     loading.value = true
     error.value = ''
     try {
-      const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword)
-      await reauthenticateWithCredential(auth.currentUser, cred)
-      await updatePassword(auth.currentUser, newPassword)
-      await update(dbRef(db, `users/${auth.currentUser.uid}/profile`), {
-        passwordUpdatedAt: Date.now()
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: email.value,
+        password: currentPassword
       })
-    } catch (e: unknown) {
+      if (reauthError) throw reauthError
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+      if (updateError) throw updateError
+
+      if (uid.value) {
+        const { error: profileError } = await supabase.from('profiles').upsert(
+          {
+            id: uid.value,
+            password_updated_at: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        )
+        if (profileError) throw profileError
+      }
+    } catch (e) {
       error.value = toErrorMessage(e)
       throw e
     } finally {
@@ -152,22 +175,34 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Проверка кода из письма (вернёт email, если нужно). */
-  async function verifyResetCode(oobCode: string) {
+  async function verifyResetCode(code: string) {
     try {
-      return await verifyPasswordResetCode(auth, oobCode)
+      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+      if (exchangeError) throw exchangeError
+      setFromSupabase(data.user ?? null)
+      return data.user?.email ?? null
     } catch (e) {
       error.value = toErrorMessage(e)
       throw e
     }
   }
 
-  /** Подтверждение нового пароля по коду из письма. */
-  async function confirmResetPassword(oobCode: string, newPassword: string) {
+  async function confirmResetPassword(_code: string, newPassword: string) {
     loading.value = true
     error.value = ''
     try {
-      await confirmPasswordReset(auth, oobCode, newPassword)
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+      if (updateError) throw updateError
+      if (uid.value) {
+        const { error: profileError } = await supabase.from('profiles').upsert(
+          {
+            id: uid.value,
+            password_updated_at: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        )
+        if (profileError) throw profileError
+      }
     } catch (e) {
       error.value = toErrorMessage(e)
       throw e
@@ -178,11 +213,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout(opts?: { clearGuest?: boolean }) {
     try {
-      await signOut(auth)
-      setFromFirebase(null)
+      await supabase.auth.signOut()
+      setFromSupabase(null)
       if (opts?.clearGuest) {
         localStorage.removeItem('guest_cart_v1')
         localStorage.removeItem('guest_wishlist_v1')
+        localStorage.removeItem('guest_coupon_v1')
       }
     } catch (e) {
       console.error('Logout error', e)
@@ -190,19 +226,15 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    // state
     user,
     loading,
     error,
     ready,
-    // getters
     isAuthed,
     uid,
     email,
-    // lifecycle
     initAuthWatcher,
     disposeAuthWatcher,
-    // actions
     register,
     login,
     resetPassword,

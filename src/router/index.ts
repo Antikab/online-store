@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
     meta: { guestOnly: true }
   },
 
-  // Установка нового пароля по ссылке из письма (oobCode)
+  // Установка нового пароля по ссылке из письма (Supabase recovery)
   {
     path: '/change-password',
     component: () => import('@/views/auth/ChangePassword.vue'),
