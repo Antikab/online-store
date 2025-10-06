@@ -12,7 +12,7 @@ type CartRow = {
   product_id: string
   color: string
   size: string
-  qty: number
+  quantity: number
   added_at: string | number | null
   price: number
   title: string
@@ -32,7 +32,7 @@ function mapRow(row: CartRow): CartItem {
     productId: row.product_id,
     color: row.color,
     size: row.size,
-    qty: Number(row.qty ?? 0),
+    quantity: Number(row.quantity ?? 0),
     addedAt: Number.isFinite(addedAt) ? addedAt : Date.now(),
     price: Number(row.price ?? 0),
     title: row.title,
@@ -47,6 +47,7 @@ export const useCartStore = defineStore('cart', () => {
   let channel: RealtimeChannel | null = null
   let stopAuthWatch: WatchStopHandle | null = null
 
+  // ---------- Guest logic ----------
   function loadGuest() {
     try {
       const raw = localStorage.getItem(GUEST_KEY)
@@ -65,19 +66,29 @@ export const useCartStore = defineStore('cart', () => {
     items.value = {}
   }
 
+  // ---------- Supabase logic ----------
   async function refresh(uid: string) {
-    const { data, error } = await supabase.from('cart_items').select('*').eq('user_id', uid)
+    const { data, error } = await supabase
+      .from('cart_items')
+      .select('*')
+      .eq('user_id', uid)
+      .order('added_at', { ascending: true })
     if (error) throw error
     const rows = (data as CartRow[] | null) ?? []
     const next: Record<string, CartItem> = {}
-    for (const row of rows) {
-      next[row.id] = mapRow(row)
-    }
+    for (const row of rows) next[row.id] = mapRow(row)
     items.value = next
   }
 
   async function bindUserCart(uid: string) {
     await refresh(uid)
+
+    // Отписка от предыдущего канала
+    if (channel) {
+      await channel.unsubscribe()
+      channel = null
+    }
+
     channel = supabase
       .channel(`cart:${uid}`)
       .on(
@@ -85,19 +96,26 @@ export const useCartStore = defineStore('cart', () => {
         { event: '*', schema: 'public', table: 'cart_items', filter: `user_id=eq.${uid}` },
         async (payload) => {
           try {
-            if (payload.eventType === 'DELETE') {
-              const deletedId = (payload.old as CartRow | null)?.id
-              if (deletedId) delete items.value[deletedId]
+            const event = payload.eventType
+            const row = payload.new as CartRow | null
+
+            if (event === 'DELETE') {
+              const id = (payload.old as CartRow | null)?.id
+              if (id) delete items.value[id]
               return
             }
-            const row = payload.new as CartRow | null
-            if (row) items.value[row.id] = mapRow(row)
+
+            if (event === 'UPDATE' || event === 'INSERT') {
+              if (row) items.value[row.id] = mapRow(row)
+            }
           } catch (e) {
             console.error('Cart realtime update failed', e)
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[cart realtime]', status)
+      })
   }
 
   async function unbind() {
@@ -107,9 +125,7 @@ export const useCartStore = defineStore('cart', () => {
     }
   }
 
-  const list = computed(() => Object.values(items.value))
-  const subtotal = computed(() => list.value.reduce((s, i) => s + i.price * i.qty, 0))
-
+  // ---------- Guest sync ----------
   async function syncGuestToUser(uid: string) {
     const guest = { ...items.value }
     if (!Object.keys(guest).length) return
@@ -120,25 +136,29 @@ export const useCartStore = defineStore('cart', () => {
       product_id: it.productId,
       color: it.color,
       size: it.size,
-      qty: it.qty,
+      quantity: it.quantity,
       added_at: new Date(it.addedAt).toISOString(),
       price: it.price,
       title: it.title,
       image: it.image
     }))
 
-    const { error } = await supabase.from('cart_items').upsert(rows, { onConflict: 'id' })
+    const { error } = await supabase
+      .from('cart_items')
+      .upsert(rows, { onConflict: 'user_id,product_id,color,size' })
     if (error) throw error
+
     clearGuest()
   }
 
-  async function add(p: Product, color: string, size: string, qty = 1) {
+  // ---------- Core actions ----------
+  async function add(p: Product, color: string, size: string, quantity = 1) {
     const id = keyOf({ productId: p.id, color, size })
     const base: CartItem = {
       productId: p.id,
       color,
       size,
-      qty,
+      quantity,
       addedAt: Date.now(),
       price: p.price,
       title: p.title,
@@ -147,36 +167,42 @@ export const useCartStore = defineStore('cart', () => {
 
     if (isGuest.value) {
       const existing = items.value[id]
-      items.value[id] = existing ? { ...existing, qty: existing.qty + qty } : base
+      items.value[id] = existing ? { ...existing, quantity: existing.quantity + quantity } : base
       saveGuest()
     } else {
       const auth = useAuthStore()
       const uid = auth.uid
       if (!uid) throw new Error('auth required')
+
       const existing = items.value[id]
+      const newQty = existing ? existing.quantity + quantity : quantity
+
       const payload = {
         id,
         user_id: uid,
         product_id: p.id,
         color,
         size,
-        qty: existing ? existing.qty + qty : qty,
+        quantity: newQty,
         added_at: new Date(existing?.addedAt ?? base.addedAt).toISOString(),
         price: p.price,
         title: p.title,
         image: p.imageUrls?.[0] || ''
       }
-      const { error } = await supabase.from('cart_items').upsert(payload, { onConflict: 'id' })
+
+      const { error } = await supabase
+        .from('cart_items')
+        .upsert(payload, { onConflict: 'user_id,product_id,color,size' })
       if (error) throw error
     }
   }
 
-  async function setQty(id: string, qty: number) {
-    if (qty <= 0) return removeItem(id)
+  async function setQty(id: string, quantity: number) {
+    if (quantity <= 0) return removeItem(id)
     if (isGuest.value) {
       const existing = items.value[id]
       if (!existing) return
-      items.value[id] = { ...existing, qty }
+      items.value[id] = { ...existing, quantity }
       saveGuest()
     } else {
       const auth = useAuthStore()
@@ -184,7 +210,7 @@ export const useCartStore = defineStore('cart', () => {
       if (!uid) throw new Error('auth required')
       const { error } = await supabase
         .from('cart_items')
-        .update({ qty })
+        .update({ quantity })
         .eq('user_id', uid)
         .eq('id', id)
       if (error) throw error
@@ -216,6 +242,11 @@ export const useCartStore = defineStore('cart', () => {
     }
   }
 
+  // ---------- State ----------
+  const list = computed(() => Object.values(items.value))
+  const subtotal = computed(() => list.value.reduce((s, i) => s + i.price * i.quantity, 0))
+
+  // ---------- Auth watcher ----------
   function start() {
     if (stopAuthWatch) return
     const auth = useAuthStore()

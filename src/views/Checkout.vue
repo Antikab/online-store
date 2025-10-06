@@ -67,7 +67,7 @@ async function submit() {
   try {
     await orders.placeOrder({
       delivery: { ...form },
-      items: cart.list, // [{ productId,color,size,qty,price,title,image }]
+      items: cart.list, // [{ productId,color,size,quantity,price,title,image }]
       amounts: {
         subtotal: cart.subtotal,
         discount: discountSum.value,

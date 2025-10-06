@@ -12,7 +12,7 @@ type OrderItem = {
   price: number
   color: string
   size: string
-  qty: number
+  quantity: number
   image?: string
 }
 

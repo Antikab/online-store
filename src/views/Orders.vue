@@ -23,8 +23,8 @@ const list = computed(() => orders.list)
 
           <ul>
             <li v-for="it in o.items" :key="it.productId + it.color + it.size">
-              {{ it.title }} — {{ it.color }}/{{ it.size }} × {{ it.qty }} =
-              {{ (it.price * it.qty).toFixed(2) }} $
+              {{ it.title }} — {{ it.color }}/{{ it.size }} × {{ it.quantity }} =
+              {{ (it.price * it.quantity).toFixed(2) }} $
             </li>
           </ul>
 

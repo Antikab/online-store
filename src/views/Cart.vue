@@ -33,7 +33,7 @@ function proceed() {
         <tr>
           <th>Item</th>
           <th>Options</th>
-          <th>Qty</th>
+          <th>quantity</th>
           <th>Price</th>
           <th></th>
         </tr>
@@ -49,15 +49,19 @@ function proceed() {
           </td>
           <td>{{ i.color }} / {{ i.size }}</td>
           <td>
-            <button @click="cart.setQty(cart.compoundId(i.productId, i.color, i.size), i.qty - 1)">
+            <button
+              @click="cart.setQty(cart.compoundId(i.productId, i.color, i.size), i.quantity - 1)"
+            >
               −
             </button>
-            <span style="padding: 0 8px">{{ i.qty }}</span>
-            <button @click="cart.setQty(cart.compoundId(i.productId, i.color, i.size), i.qty + 1)">
+            <span style="padding: 0 8px">{{ i.quantity }}</span>
+            <button
+              @click="cart.setQty(cart.compoundId(i.productId, i.color, i.size), i.quantity + 1)"
+            >
               +
             </button>
           </td>
-          <td>{{ (i.price * i.qty).toFixed(2) }} $</td>
+          <td>{{ (i.price * i.quantity).toFixed(2) }} $</td>
           <td>
             <button @click="cart.removeItem(cart.compoundId(i.productId, i.color, i.size))">
               Remove

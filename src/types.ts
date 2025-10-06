@@ -22,7 +22,7 @@ export interface CartItemKey {
   size: string
 }
 export interface CartItem extends CartItemKey {
-  qty: number
+  quantity: number
   addedAt: number
   price: number
   title: string
