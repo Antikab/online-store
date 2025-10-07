@@ -4,7 +4,6 @@ import { ref } from 'vue'
 import { supabase } from '@/supabase'
 import { useAuthStore } from './auth'
 import type { DeliveryForm } from '@/types'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
 type OrderItem = {
   productId: string
@@ -27,7 +26,6 @@ export type OrderPayload = {
 }
 
 type OrderEntity = OrderPayload & { id: string }
-
 type OrderRow = {
   id: string
   user_id: string
@@ -39,14 +37,14 @@ type OrderRow = {
 }
 
 function mapRow(row: OrderRow): OrderEntity {
-  const createdAt = row.created_at ? Date.parse(row.created_at) : NaN
+  const createdAt = row.created_at ? Date.parse(row.created_at) : Date.now()
   return {
     id: row.id,
     delivery: row.delivery,
     items: row.items ?? [],
     amounts: row.amounts,
     coupon: row.coupon,
-    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now()
+    createdAt
   }
 }
 
@@ -54,9 +52,8 @@ export const useOrdersStore = defineStore('orders', () => {
   const list = ref<OrderEntity[]>([])
   const loading = ref(false)
 
-  let channel: RealtimeChannel | null = null
-
   async function refresh(uid: string) {
+    loading.value = true
     const { data, error } = await supabase
       .from('orders')
       .select('*')
@@ -68,41 +65,14 @@ export const useOrdersStore = defineStore('orders', () => {
     loading.value = false
   }
 
-  async function bind(uid: string) {
-    loading.value = true
-    await refresh(uid)
-    channel = supabase
-      .channel(`orders:${uid}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${uid}` },
-        async () => {
-          try {
-            await refresh(uid)
-          } catch (e) {
-            console.error('Failed to refresh orders', e)
-          }
-        }
-      )
-      .subscribe()
-  }
-
-  async function unbind() {
-    if (channel) {
-      await channel.unsubscribe()
-      channel = null
-    }
-  }
-
   async function init() {
     const auth = useAuthStore()
-    await unbind()
     if (!auth.uid) {
       list.value = []
       loading.value = false
       return
     }
-    await bind(auth.uid)
+    await refresh(auth.uid)
   }
 
   async function placeOrder(order: OrderPayload) {
@@ -122,8 +92,11 @@ export const useOrdersStore = defineStore('orders', () => {
 
     const { data, error } = await supabase.from('orders').insert(row).select('id').single()
     if (error) throw error
-    return data?.id as string
+
+    // добавим в список локально, чтобы сразу показывалось
+    list.value.unshift({ id: data!.id as string, ...order })
+    return data!.id as string
   }
 
-  return { list, loading, init, placeOrder }
+  return { list, loading, init, refresh, placeOrder }
 })

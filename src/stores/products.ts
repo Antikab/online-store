@@ -1,14 +1,12 @@
-// stores/products.ts
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { supabase } from '@/supabase'
 import type { Product, Gender } from '@/types'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
 type ProductRow = {
   id: string
   title: string
-  gender: Gender
+  gender: Gender | null
   category: string
   price: number
   colors: string[] | null
@@ -21,11 +19,26 @@ type ProductRow = {
   is_active?: boolean | null
 }
 
+type ProductFilters = {
+  gender?: Gender
+  category?: string | null
+  color?: string | null
+  size?: string | null
+  priceRange?: [number, number]
+  query?: string | null
+}
+
+function toMs(ts: string | null): number {
+  if (!ts) return Date.now()
+  const n = Date.parse(ts)
+  return Number.isFinite(n) ? n : Date.now()
+}
+
 function mapProduct(row: ProductRow): Product {
   return {
     id: row.id,
     title: row.title,
-    gender: row.gender,
+    gender: (row.gender as Gender) || 'men',
     category: row.category,
     price: Number(row.price ?? 0),
     colors: row.colors ?? [],
@@ -34,40 +47,66 @@ function mapProduct(row: ProductRow): Product {
     description: row.description ?? '',
     extra: row.extra ?? undefined,
     videoUrl: row.video_url ?? undefined,
-    createdAt: row.created_at ? Date.parse(row.created_at) : Date.now()
+    createdAt: toMs(row.created_at)
   }
+}
+
+function buildQuery(f: ProductFilters) {
+  let q = supabase
+    .from('products')
+    .select(
+      'id,title,gender,category,price,colors,sizes,image_urls,description,extra,video_url,created_at,is_active'
+    )
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+
+  if (f.gender) q = q.eq('gender', f.gender)
+  if (f.category) q = q.eq('category', f.category)
+  if (f.color) q = q.contains('colors', [f.color])
+  if (f.size) q = q.contains('sizes', [f.size])
+  if (f.priceRange) {
+    const [min, max] = f.priceRange
+    q = q.gte('price', min).lte('price', max)
+  }
+  if (f.query) q = q.ilike('title', `%${f.query}%`)
+
+  return q
 }
 
 export const useProductsStore = defineStore('products', () => {
   const items = ref<Product[]>([])
   const loaded = ref(false)
-  let channel: RealtimeChannel | null = null
 
+  // 🔹 Инициализация (для фильтров)
   async function refresh() {
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: true })
+    const { data, error } = await buildQuery({}).range(0, 999)
     if (error) throw error
     const rows = (data as ProductRow[] | null) ?? []
-    items.value = rows.filter((p) => p.is_active ?? true).map(mapProduct)
+    items.value = rows.map(mapProduct)
     loaded.value = true
   }
 
   async function init() {
-    if (channel) return
     await refresh()
+  }
 
-    channel = supabase
-      .channel('products')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
-        try {
-          await refresh()
-        } catch (e) {
-          console.error('Failed to refresh products', e)
-        }
-      })
-      .subscribe()
+  // 🔹 Пагинированная загрузка для infinite scroll
+  async function fetchPage(opts: { page: number; perPage: number } & ProductFilters) {
+    const { page, perPage, ...filters } = opts
+    const from = (page - 1) * perPage
+    const to = from + perPage - 1
+
+    const query = buildQuery(filters)
+    const { data, error } = await query.range(from, to)
+
+    if (error) {
+      console.error('Supabase fetchPage error:', error)
+      throw error
+    }
+
+    const rows = (data as ProductRow[] | null) ?? []
+    console.log(`fetchPage page=${page}, rows=${rows.length}`)
+    return rows.map(mapProduct)
   }
 
   const categories = computed(() => Array.from(new Set(items.value.map((p) => p.category))).sort())
@@ -84,50 +123,17 @@ export const useProductsStore = defineStore('products', () => {
     return items.value.find((p) => p.id === id) || null
   }
 
-  async function fetchOne(id: string) {
-    const { data, error } = await supabase.from('products').select('*').eq('id', id).maybeSingle()
-    if (error) throw error
-    const row = (data as ProductRow | null) ?? null
-    return row ? mapProduct(row) : null
-  }
-
-  function filtered(opts: {
-    gender?: Gender
-    category?: string | null
-    color?: string | null
-    size?: string | null
-    priceRange?: [number, number]
-    query?: string | null
-  }) {
-    const [min, max] = opts.priceRange ?? [priceMin.value, priceMax.value]
-    return items.value.filter((p) => {
-      if (opts.gender && p.gender !== opts.gender) return false
-      if (opts.category && p.category !== opts.category) return false
-      if (opts.color && !p.colors.includes(opts.color)) return false
-      if (opts.size && !p.sizes.includes(opts.size)) return false
-      if (p.price < min || p.price > max) return false
-      if (opts.query && !p.title.toLowerCase().includes(opts.query.toLowerCase())) return false
-      return true
-    })
-  }
-
-  function paginate(list: Product[], page: number, perPage: number) {
-    const start = (page - 1) * perPage
-    return list.slice(start, start + perPage)
-  }
-
   return {
     items,
     loaded,
     init,
+    refresh,
+    fetchPage,
     categories,
     colors,
     sizes,
     priceMin,
     priceMax,
-    byId,
-    fetchOne,
-    filtered,
-    paginate
+    byId
   }
 })

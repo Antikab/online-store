@@ -3,21 +3,14 @@ import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch, type WatchStopHandle } from 'vue'
 import { supabase } from '@/supabase'
 import { useAuthStore } from '@/stores/auth'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
-type WishlistRow = {
-  user_id: string
-  product_id: string
-  created_at: string | number | null
-}
+type WishlistRow = { user_id: string; product_id: string; created_at: string | number | null }
 
 const GUEST_KEY = 'guest_wishlist_v1'
 
 export const useWishlistStore = defineStore('wishlist', () => {
   const ids = ref<Set<string>>(new Set())
   const isGuest = ref(true)
-
-  let channel: RealtimeChannel | null = null
   let stopAuthWatch: WatchStopHandle | null = null
 
   function loadGuest() {
@@ -29,11 +22,9 @@ export const useWishlistStore = defineStore('wishlist', () => {
       ids.value = new Set()
     }
   }
-
   function saveGuest() {
     localStorage.setItem(GUEST_KEY, JSON.stringify(Array.from(ids.value)))
   }
-
   function clearGuest() {
     localStorage.removeItem(GUEST_KEY)
     ids.value = new Set()
@@ -44,37 +35,6 @@ export const useWishlistStore = defineStore('wishlist', () => {
     if (error) throw error
     const rows = (data as WishlistRow[] | null) ?? []
     ids.value = new Set(rows.map((r) => r.product_id))
-  }
-
-  async function bindUser(uid: string) {
-    await refresh(uid)
-    channel = supabase
-      .channel(`wishlist:${uid}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'wishlists', filter: `user_id=eq.${uid}` },
-        (payload) => {
-          try {
-            if (payload.eventType === 'DELETE') {
-              const removed = (payload.old as WishlistRow | null)?.product_id
-              if (removed) ids.value.delete(removed)
-              return
-            }
-            const row = payload.new as WishlistRow | null
-            if (row?.product_id) ids.value.add(row.product_id)
-          } catch (e) {
-            console.error('Wishlist realtime update failed', e)
-          }
-        }
-      )
-      .subscribe()
-  }
-
-  async function unbind() {
-    if (channel) {
-      await channel.unsubscribe()
-      channel = null
-    }
   }
 
   async function syncGuestToUser(uid: string) {
@@ -90,6 +50,7 @@ export const useWishlistStore = defineStore('wishlist', () => {
       .upsert(rows, { onConflict: 'user_id,product_id' })
     if (error) throw error
     clearGuest()
+    await refresh(uid)
   }
 
   const listIds = computed(() => Array.from(ids.value))
@@ -102,25 +63,36 @@ export const useWishlistStore = defineStore('wishlist', () => {
       if (ids.value.has(id)) ids.value.delete(id)
       else ids.value.add(id)
       saveGuest()
+      return
+    }
+
+    const auth = useAuthStore()
+    const uid = auth.uid
+    if (!uid) throw new Error('auth required')
+
+    const had = ids.value.has(id)
+    if (had) {
+      ids.value.delete(id) // optimistic
+      const { error } = await supabase
+        .from('wishlists')
+        .delete()
+        .eq('user_id', uid)
+        .eq('product_id', id)
+      if (error) {
+        ids.value.add(id) // rollback
+        throw error
+      }
     } else {
-      const auth = useAuthStore()
-      const uid = auth.uid
-      if (!uid) throw new Error('auth required')
-      if (ids.value.has(id)) {
-        const { error } = await supabase
-          .from('wishlists')
-          .delete()
-          .eq('user_id', uid)
-          .eq('product_id', id)
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('wishlists')
-          .upsert(
-            { user_id: uid, product_id: id, created_at: new Date().toISOString() },
-            { onConflict: 'user_id,product_id' }
-          )
-        if (error) throw error
+      ids.value.add(id) // optimistic
+      const { error } = await supabase
+        .from('wishlists')
+        .upsert(
+          { user_id: uid, product_id: id, created_at: new Date().toISOString() },
+          { onConflict: 'user_id,product_id' }
+        )
+      if (error) {
+        ids.value.delete(id) // rollback
+        throw error
       }
     }
   }
@@ -140,16 +112,11 @@ export const useWishlistStore = defineStore('wishlist', () => {
             } catch (e) {
               console.error('Failed to merge guest wishlist', e)
             }
+          } else {
+            await refresh(newUid)
           }
           isGuest.value = false
-          await unbind()
-          try {
-            await bindUser(newUid)
-          } catch (e) {
-            console.error('Failed to bind wishlist', e)
-          }
         } else {
-          await unbind()
           isGuest.value = true
           loadGuest()
         }

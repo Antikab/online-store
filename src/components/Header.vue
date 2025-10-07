@@ -1,62 +1,46 @@
-<script setup lang="ts">
-import { useAuthStore } from '@/stores/auth'
-import { storeToRefs } from 'pinia'
-
-const auth = useAuthStore()
-const { isAuthed, email } = storeToRefs(auth)
-
-async function onLogout() {
-  await auth.logout({ clearGuest: true })
-}
-</script>
-
 <template>
-  <header class="app-header">
-    <nav class="links">
-      <RouterLink to="/">Главная</RouterLink>
-      <RouterLink to="/catalog/men">Men</RouterLink>
-      <RouterLink to="/catalog/women">Women</RouterLink>
-      <RouterLink to="/wishlist">Wishlist</RouterLink>
-      <RouterLink v-if="isAuthed" to="/orders">Orders</RouterLink>
-      <RouterLink to="/cart">Cart</RouterLink>
+  <header class="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
+    <nav class="flex gap-3 text-sm">
+      <RouterLink class="hover:underline" to="/">Главная</RouterLink>
+      <RouterLink class="hover:underline" to="/catalog/men">Men</RouterLink>
+      <RouterLink class="hover:underline" to="/catalog/women">Women</RouterLink>
+      <RouterLink class="hover:underline" to="/wishlist">Wishlist</RouterLink>
+      <RouterLink v-if="isAuthed" class="hover:underline" to="/orders">Orders</RouterLink>
+      <RouterLink class="hover:underline" to="/cart">Cart</RouterLink>
     </nav>
 
-    <div class="spacer" />
+    <div class="flex-1" />
 
     <template v-if="isAuthed">
-      <span class="email">{{ email }}</span>
-      <button @click="onLogout">Выйти</button>
+      <span class="text-gray-600 mr-2 truncate max-w-[24ch]">{{ email }}</span>
+      <button
+        @click="onLogout"
+        class="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+      >
+        Выйти
+      </button>
     </template>
     <template v-else>
-      <RouterLink to="/login">Войти</RouterLink>
-      <RouterLink to="/register">Регистрация</RouterLink>
+      <RouterLink
+        class="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+        to="/login"
+        >Войти</RouterLink
+      >
+      <RouterLink
+        class="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 ml-2"
+        to="/register"
+        >Регистрация</RouterLink
+      >
     </template>
   </header>
 </template>
 
-<style scoped>
-.app-header {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 12px;
-  border-bottom: 1px solid #eee;
+<script setup lang="ts">
+import { useAuthStore } from '@/stores/auth'
+import { storeToRefs } from 'pinia'
+const auth = useAuthStore()
+const { isAuthed, email } = storeToRefs(auth)
+async function onLogout() {
+  await auth.logout({ clearGuest: true })
 }
-.links {
-  display: flex;
-  gap: 12px;
-}
-.spacer {
-  flex: 1;
-}
-.email {
-  opacity: 0.7;
-}
-button {
-  border: 1px solid #ddd;
-  background: #fff;
-  padding: 6px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-</style>
+</script>

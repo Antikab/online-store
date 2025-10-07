@@ -2,28 +2,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { supabase } from '@/supabase'
-import { AuthError, type User } from '@supabase/supabase-js'
+import { type User } from '@supabase/supabase-js'
+import { authErrorMessage } from '@/utils/authError'
 
 type PublicUser = { uid: string; email: string | null }
-
-type MaybeWithMessage = { message?: string }
-
-function toErrorMessage(e: unknown): string {
-  if (e instanceof AuthError) {
-    const msg = e.message?.toLowerCase() ?? ''
-    if (msg.includes('invalid login') || msg.includes('invalid email or password'))
-      return 'Неверный e-mail или пароль'
-    if (msg.includes('email not confirmed')) return 'Подтвердите e-mail, чтобы войти'
-    if (msg.includes('password should be at least')) return 'Слишком простой пароль'
-    if (msg.includes('already registered')) return 'E-mail уже используется'
-    if (msg.includes('invalid email')) return 'Некорректный e-mail'
-    return e.message || 'Ошибка авторизации'
-  }
-  if (typeof e === 'object' && e && 'message' in e)
-    return String((e as MaybeWithMessage).message || '')
-  if (e instanceof Error) return e.message
-  return String(e)
-}
 
 const RESET_REDIRECT_URL = import.meta.env.DEV
   ? 'http://localhost:5173/change-password'
@@ -49,22 +31,25 @@ export const useAuthStore = defineStore('auth', () => {
     if (unsub) return
 
     try {
-      const { data, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError) throw sessionError
-      setFromSupabase(data.session?.user ?? null)
+      const {
+        data: { session }
+      } = await supabase.auth.getSession()
+      setFromSupabase(session?.user ?? null)
     } catch (e) {
       console.error('Failed to restore session', e)
     } finally {
       ready.value = true
     }
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setFromSupabase(session?.user ?? null)
       ready.value = true
     })
 
     unsub = () => {
-      listener.subscription.unsubscribe()
+      subscription.unsubscribe()
       unsub = null
     }
   }
@@ -87,20 +72,9 @@ export const useAuthStore = defineStore('auth', () => {
       })
       if (signUpError) throw signUpError
       const signedUser = data.user
-      if (signedUser) {
-        setFromSupabase(signedUser)
-        const { error: profileError } = await supabase.from('profiles').upsert(
-          {
-            id: signedUser.id,
-            email: normEmail,
-            created_at: new Date().toISOString()
-          },
-          { onConflict: 'id' }
-        )
-        if (profileError) throw profileError
-      }
+      if (signedUser) setFromSupabase(signedUser)
     } catch (e) {
-      error.value = toErrorMessage(e)
+      error.value = authErrorMessage(e)
       throw e
     } finally {
       loading.value = false
@@ -119,7 +93,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (signInError) throw signInError
       setFromSupabase(data.user ?? null)
     } catch (e) {
-      error.value = toErrorMessage(e)
+      error.value = authErrorMessage(e)
       throw e
     } finally {
       loading.value = false
@@ -136,7 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
       })
       if (resetError) throw resetError
     } catch (e) {
-      error.value = toErrorMessage(e)
+      error.value = authErrorMessage(e)
     } finally {
       loading.value = false
     }
@@ -144,7 +118,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function changePasswordWithReauth(currentPassword: string, newPassword: string) {
     if (!email.value) throw new Error('Not authenticated')
-
     loading.value = true
     error.value = ''
     try {
@@ -153,58 +126,24 @@ export const useAuthStore = defineStore('auth', () => {
         password: currentPassword
       })
       if (reauthError) throw reauthError
-
       const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
       if (updateError) throw updateError
-
-      if (uid.value) {
-        const { error: profileError } = await supabase.from('profiles').upsert(
-          {
-            id: uid.value,
-            password_updated_at: new Date().toISOString()
-          },
-          { onConflict: 'id' }
-        )
-        if (profileError) throw profileError
-      }
     } catch (e) {
-      error.value = toErrorMessage(e)
+      error.value = authErrorMessage(e)
       throw e
     } finally {
       loading.value = false
     }
   }
 
-  async function verifyResetCode(code: string) {
-    try {
-      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-      if (exchangeError) throw exchangeError
-      setFromSupabase(data.user ?? null)
-      return data.user?.email ?? null
-    } catch (e) {
-      error.value = toErrorMessage(e)
-      throw e
-    }
-  }
-
-  async function confirmResetPassword(_code: string, newPassword: string) {
+  async function confirmResetPassword(newPassword: string) {
     loading.value = true
     error.value = ''
     try {
       const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
       if (updateError) throw updateError
-      if (uid.value) {
-        const { error: profileError } = await supabase.from('profiles').upsert(
-          {
-            id: uid.value,
-            password_updated_at: new Date().toISOString()
-          },
-          { onConflict: 'id' }
-        )
-        if (profileError) throw profileError
-      }
     } catch (e) {
-      error.value = toErrorMessage(e)
+      error.value = authErrorMessage(e)
       throw e
     } finally {
       loading.value = false
@@ -239,7 +178,6 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     resetPassword,
     changePasswordWithReauth,
-    verifyResetCode,
     confirmResetPassword,
     logout
   }

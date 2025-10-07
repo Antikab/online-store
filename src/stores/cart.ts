@@ -4,10 +4,8 @@ import { computed, ref, watch, type WatchStopHandle } from 'vue'
 import { supabase } from '@/supabase'
 import { useAuthStore } from '@/stores/auth'
 import type { Product, CartItem, CartItemKey } from '@/types'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
 type CartRow = {
-  id: string
   user_id: string
   product_id: string
   color: string
@@ -21,9 +19,7 @@ type CartRow = {
 
 const GUEST_KEY = 'guest_cart_v1'
 
-function keyOf(k: CartItemKey) {
-  return `${k.productId}_${k.color}_${k.size}`
-}
+const cidOf = (k: CartItemKey) => `${k.productId}_${k.color}_${k.size}`
 
 function mapRow(row: CartRow): CartItem {
   const addedAt =
@@ -43,11 +39,8 @@ function mapRow(row: CartRow): CartItem {
 export const useCartStore = defineStore('cart', () => {
   const items = ref<Record<string, CartItem>>({})
   const isGuest = ref(true)
-
-  let channel: RealtimeChannel | null = null
   let stopAuthWatch: WatchStopHandle | null = null
 
-  // ---------- Guest logic ----------
   function loadGuest() {
     try {
       const raw = localStorage.getItem(GUEST_KEY)
@@ -56,82 +49,35 @@ export const useCartStore = defineStore('cart', () => {
       items.value = {}
     }
   }
-
   function saveGuest() {
     localStorage.setItem(GUEST_KEY, JSON.stringify(items.value))
   }
-
   function clearGuest() {
     localStorage.removeItem(GUEST_KEY)
     items.value = {}
   }
 
-  // ---------- Supabase logic ----------
   async function refresh(uid: string) {
     const { data, error } = await supabase
       .from('cart_items')
-      .select('*')
+      .select('user_id,product_id,color,size,quantity,added_at,price,title,image')
       .eq('user_id', uid)
       .order('added_at', { ascending: true })
     if (error) throw error
     const rows = (data as CartRow[] | null) ?? []
     const next: Record<string, CartItem> = {}
-    for (const row of rows) next[row.id] = mapRow(row)
+    for (const row of rows) {
+      const cid = cidOf({ productId: row.product_id, color: row.color, size: row.size })
+      next[cid] = mapRow(row)
+    }
     items.value = next
   }
 
-  async function bindUserCart(uid: string) {
-    await refresh(uid)
-
-    // Отписка от предыдущего канала
-    if (channel) {
-      await channel.unsubscribe()
-      channel = null
-    }
-
-    channel = supabase
-      .channel(`cart:${uid}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cart_items', filter: `user_id=eq.${uid}` },
-        async (payload) => {
-          try {
-            const event = payload.eventType
-            const row = payload.new as CartRow | null
-
-            if (event === 'DELETE') {
-              const id = (payload.old as CartRow | null)?.id
-              if (id) delete items.value[id]
-              return
-            }
-
-            if (event === 'UPDATE' || event === 'INSERT') {
-              if (row) items.value[row.id] = mapRow(row)
-            }
-          } catch (e) {
-            console.error('Cart realtime update failed', e)
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('[cart realtime]', status)
-      })
-  }
-
-  async function unbind() {
-    if (channel) {
-      await channel.unsubscribe()
-      channel = null
-    }
-  }
-
-  // ---------- Guest sync ----------
   async function syncGuestToUser(uid: string) {
     const guest = { ...items.value }
     if (!Object.keys(guest).length) return
 
-    const rows = Object.entries(guest).map(([id, it]) => ({
-      id,
+    const rows = Object.values(guest).map((it) => ({
       user_id: uid,
       product_id: it.productId,
       color: it.color,
@@ -142,18 +88,17 @@ export const useCartStore = defineStore('cart', () => {
       title: it.title,
       image: it.image
     }))
-
     const { error } = await supabase
       .from('cart_items')
       .upsert(rows, { onConflict: 'user_id,product_id,color,size' })
     if (error) throw error
 
     clearGuest()
+    await refresh(uid)
   }
 
-  // ---------- Core actions ----------
   async function add(p: Product, color: string, size: string, quantity = 1) {
-    const id = keyOf({ productId: p.id, color, size })
+    const cid = cidOf({ productId: p.id, color, size })
     const base: CartItem = {
       productId: p.id,
       color,
@@ -166,19 +111,22 @@ export const useCartStore = defineStore('cart', () => {
     }
 
     if (isGuest.value) {
-      const existing = items.value[id]
-      items.value[id] = existing ? { ...existing, quantity: existing.quantity + quantity } : base
+      const existing = items.value[cid]
+      items.value[cid] = existing ? { ...existing, quantity: existing.quantity + quantity } : base
       saveGuest()
-    } else {
-      const auth = useAuthStore()
-      const uid = auth.uid
-      if (!uid) throw new Error('auth required')
+      return
+    }
 
-      const existing = items.value[id]
-      const newQty = existing ? existing.quantity + quantity : quantity
+    const auth = useAuthStore()
+    const uid = auth.uid
+    if (!uid) throw new Error('auth required')
 
-      const payload = {
-        id,
+    const existing = items.value[cid]
+    const newQty = existing ? existing.quantity + quantity : quantity
+    items.value[cid] = { ...(existing || base), quantity: newQty }
+
+    const { error } = await supabase.from('cart_items').upsert(
+      {
         user_id: uid,
         product_id: p.id,
         color,
@@ -188,65 +136,99 @@ export const useCartStore = defineStore('cart', () => {
         price: p.price,
         title: p.title,
         image: p.imageUrls?.[0] || ''
-      }
+      },
+      { onConflict: 'user_id,product_id,color,size' }
+    )
 
-      const { error } = await supabase
-        .from('cart_items')
-        .upsert(payload, { onConflict: 'user_id,product_id,color,size' })
-      if (error) throw error
+    if (error) {
+      if (existing) items.value[cid] = existing
+      else delete items.value[cid]
+      throw error
     }
   }
 
-  async function setQty(id: string, quantity: number) {
-    if (quantity <= 0) return removeItem(id)
+  async function setQty(cid: string, quantity: number) {
+    if (quantity <= 0) return removeItem(cid)
     if (isGuest.value) {
-      const existing = items.value[id]
+      const existing = items.value[cid]
       if (!existing) return
-      items.value[id] = { ...existing, quantity }
+      items.value[cid] = { ...existing, quantity }
       saveGuest()
-    } else {
-      const auth = useAuthStore()
-      const uid = auth.uid
-      if (!uid) throw new Error('auth required')
-      const { error } = await supabase
-        .from('cart_items')
-        .update({ quantity })
-        .eq('user_id', uid)
-        .eq('id', id)
-      if (error) throw error
+      return
+    }
+
+    const auth = useAuthStore()
+    const uid = auth.uid
+    if (!uid) throw new Error('auth required')
+
+    const prev = items.value[cid]
+    if (!prev) return
+    items.value[cid] = { ...prev, quantity }
+
+    const { error } = await supabase
+      .from('cart_items')
+      .update({ quantity })
+      .eq('user_id', uid)
+      .eq('product_id', prev.productId)
+      .eq('color', prev.color)
+      .eq('size', prev.size)
+
+    if (error) {
+      items.value[cid] = prev
+      throw error
     }
   }
 
-  async function removeItem(id: string) {
+  async function removeItem(cid: string) {
     if (isGuest.value) {
-      delete items.value[id]
+      delete items.value[cid]
       saveGuest()
-    } else {
-      const auth = useAuthStore()
-      const uid = auth.uid
-      if (!uid) throw new Error('auth required')
-      const { error } = await supabase.from('cart_items').delete().eq('user_id', uid).eq('id', id)
-      if (error) throw error
+      return
+    }
+
+    const auth = useAuthStore()
+    const uid = auth.uid
+    if (!uid) throw new Error('auth required')
+
+    const snapshot = items.value[cid]
+    if (!snapshot) return
+    delete items.value[cid]
+
+    const { error } = await supabase
+      .from('cart_items')
+      .delete()
+      .eq('user_id', uid)
+      .eq('product_id', snapshot.productId)
+      .eq('color', snapshot.color)
+      .eq('size', snapshot.size)
+
+    if (error) {
+      items.value[cid] = snapshot
+      throw error
     }
   }
 
   async function clear() {
     if (isGuest.value) {
       clearGuest()
-    } else {
-      const auth = useAuthStore()
-      const uid = auth.uid
-      if (!uid) throw new Error('auth required')
-      const { error } = await supabase.from('cart_items').delete().eq('user_id', uid)
-      if (error) throw error
+      return
+    }
+    const auth = useAuthStore()
+    const uid = auth.uid
+    if (!uid) throw new Error('auth required')
+
+    const snapshot = { ...items.value }
+    items.value = {}
+    const { error } = await supabase.from('cart_items').delete().eq('user_id', uid)
+    if (error) {
+      items.value = snapshot
+      throw error
     }
   }
 
-  // ---------- State ----------
   const list = computed(() => Object.values(items.value))
   const subtotal = computed(() => list.value.reduce((s, i) => s + i.price * i.quantity, 0))
 
-  // ---------- Auth watcher ----------
   function start() {
     if (stopAuthWatch) return
     const auth = useAuthStore()
@@ -262,16 +244,11 @@ export const useCartStore = defineStore('cart', () => {
             } catch (e) {
               console.error('Failed to merge guest cart', e)
             }
+          } else {
+            await refresh(newUid)
           }
           isGuest.value = false
-          await unbind()
-          try {
-            await bindUserCart(newUid)
-          } catch (e) {
-            console.error('Failed to bind user cart', e)
-          }
         } else {
-          await unbind()
           isGuest.value = true
           loadGuest()
         }
@@ -280,20 +257,7 @@ export const useCartStore = defineStore('cart', () => {
     )
   }
 
-  function compoundId(productId: string, color: string, size: string) {
-    return keyOf({ productId, color, size })
-  }
+  const cid = (p: string, c: string, s: string) => cidOf({ productId: p, color: c, size: s })
 
-  return {
-    items,
-    list,
-    subtotal,
-    isGuest,
-    start,
-    add,
-    setQty,
-    removeItem,
-    clear,
-    compoundId
-  }
+  return { items, list, subtotal, isGuest, start, add, setQty, removeItem, clear, cid }
 })
