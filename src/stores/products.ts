@@ -1,139 +1,107 @@
+// stores/products.ts
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { ref, computed } from 'vue'
 import { supabase } from '@/supabase'
 import type { Product, Gender } from '@/types'
 
-type ProductRow = {
-  id: string
-  title: string
-  gender: Gender | null
-  category: string
-  price: number
-  colors: string[] | null
-  sizes: string[] | null
-  image_urls: string[] | null
-  description: string | null
-  extra: Record<string, string> | null
-  video_url: string | null
-  created_at: string | null
-  is_active?: boolean | null
-}
-
-type ProductFilters = {
-  gender?: Gender
-  category?: string | null
-  color?: string | null
-  size?: string | null
-  priceRange?: [number, number]
-  query?: string | null
-}
-
-function toMs(ts: string | null): number {
-  if (!ts) return Date.now()
-  const n = Date.parse(ts)
-  return Number.isFinite(n) ? n : Date.now()
-}
-
-function mapProduct(row: ProductRow): Product {
-  return {
-    id: row.id,
-    title: row.title,
-    gender: (row.gender as Gender) || 'men',
-    category: row.category,
-    price: Number(row.price ?? 0),
-    colors: row.colors ?? [],
-    sizes: row.sizes ?? [],
-    imageUrls: row.image_urls ?? [],
-    description: row.description ?? '',
-    extra: row.extra ?? undefined,
-    videoUrl: row.video_url ?? undefined,
-    createdAt: toMs(row.created_at)
-  }
-}
-
-function buildQuery(f: ProductFilters) {
-  let q = supabase
-    .from('products')
-    .select(
-      'id,title,gender,category,price,colors,sizes,image_urls,description,extra,video_url,created_at,is_active'
-    )
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-
-  if (f.gender) q = q.eq('gender', f.gender)
-  if (f.category) q = q.eq('category', f.category)
-  if (f.color) q = q.contains('colors', [f.color])
-  if (f.size) q = q.contains('sizes', [f.size])
-  if (f.priceRange) {
-    const [min, max] = f.priceRange
-    q = q.gte('price', min).lte('price', max)
-  }
-  if (f.query) q = q.ilike('title', `%${f.query}%`)
-
-  return q
-}
-
 export const useProductsStore = defineStore('products', () => {
-  const items = ref<Product[]>([])
+  const all = ref<Product[]>([])
   const loaded = ref(false)
 
-  // 🔹 Инициализация (для фильтров)
-  async function refresh() {
-    const { data, error } = await buildQuery({}).range(0, 999)
+  // 🔢 Цены
+  const priceMin = computed(() =>
+    all.value.length ? Math.min(...all.value.map((p) => p.price)) : 0
+  )
+  const priceMax = computed(() =>
+    all.value.length ? Math.max(...all.value.map((p) => p.price)) : 100000
+  )
+
+  // 🧠 Загрузка всех товаров
+  async function init() {
+    if (loaded.value) return
+
+    const { data, error } = await supabase
+      .from('products')
+      .select(
+        'id,title,gender,category,price,colors,sizes,image_urls,description,is_active,extra,video_url'
+      )
+      .eq('is_active', true)
+
     if (error) throw error
-    const rows = (data as ProductRow[] | null) ?? []
-    items.value = rows.map(mapProduct)
+
+    all.value = (data ?? []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      gender: (r.gender as Gender) || 'men',
+      category: r.category,
+      price: Number(r.price ?? 0),
+      colors: r.colors ?? [],
+      sizes: r.sizes ?? [],
+      imageUrls: r.image_urls ?? [],
+      description: r.description ?? '',
+      extra: r.extra ?? null,
+      videoUrl: r.video_url ?? null // ✅ правильно!
+    }))
+
     loaded.value = true
   }
 
-  async function init() {
-    await refresh()
+  // 🔍 Поиск по id (кэш)
+  function byId(id: string): Product | null {
+    return all.value.find((p) => p.id === id) ?? null
   }
 
-  // 🔹 Пагинированная загрузка для infinite scroll
-  async function fetchPage(opts: { page: number; perPage: number } & ProductFilters) {
-    const { page, perPage, ...filters } = opts
-    const from = (page - 1) * perPage
-    const to = from + perPage - 1
+  // 🌐 Загрузка одного товара (если нет в кэше)
+  async function fetchOne(id: string): Promise<Product | null> {
+    const cached = byId(id)
+    if (cached) return cached
 
-    const query = buildQuery(filters)
-    const { data, error } = await query.range(from, to)
+    const { data, error } = await supabase
+      .from('products')
+      .select(
+        'id,title,gender,category,price,colors,sizes,image_urls,description,is_active,extra,video_url'
+      )
+      .eq('id', id)
+      .eq('is_active', true)
+      .maybeSingle()
 
-    if (error) {
-      console.error('Supabase fetchPage error:', error)
-      throw error
+    if (error) throw error
+    if (!data) return null
+
+    const product: Product = {
+      id: data.id,
+      title: data.title,
+      gender: (data.gender as Gender) || 'men',
+      category: data.category,
+      price: Number(data.price ?? 0),
+      colors: data.colors ?? [],
+      sizes: data.sizes ?? [],
+      imageUrls: data.image_urls ?? [],
+      description: data.description ?? '',
+      extra: data.extra ?? null,
+      videoUrl: data.video_url ?? null // ✅
     }
 
-    const rows = (data as ProductRow[] | null) ?? []
-    console.log(`fetchPage page=${page}, rows=${rows.length}`)
-    return rows.map(mapProduct)
+    // кэшируем в all, чтобы при возврате не подгружать повторно
+    all.value.push(product)
+    return product
   }
 
-  const categories = computed(() => Array.from(new Set(items.value.map((p) => p.category))).sort())
-  const colors = computed(() => Array.from(new Set(items.value.flatMap((p) => p.colors))).sort())
-  const sizes = computed(() => Array.from(new Set(items.value.flatMap((p) => p.sizes))).sort())
-  const priceMin = computed(() =>
-    items.value.length ? Math.min(...items.value.map((p) => p.price)) : 0
-  )
-  const priceMax = computed(() =>
-    items.value.length ? Math.max(...items.value.map((p) => p.price)) : 0
-  )
-
-  function byId(id: string) {
-    return items.value.find((p) => p.id === id) || null
-  }
+  // 🏷️ Фильтры
+  const categories = computed(() => [...new Set(all.value.map((p) => p.category))].filter(Boolean))
+  const colors = computed(() => [...new Set(all.value.flatMap((p) => p.colors))].filter(Boolean))
+  const sizes = computed(() => [...new Set(all.value.flatMap((p) => p.sizes))].filter(Boolean))
 
   return {
-    items,
+    all,
     loaded,
     init,
-    refresh,
-    fetchPage,
-    categories,
-    colors,
-    sizes,
+    byId,
+    fetchOne,
     priceMin,
     priceMax,
-    byId
+    categories,
+    colors,
+    sizes
   }
 })

@@ -1,15 +1,22 @@
-<!-- views/Wishlist.vue -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useWishlistStore } from '@/stores/wishlist'
 import { useProductsStore } from '@/stores/products'
-import Loader from '@/components/Loader.vue' // 👈 импортируем твой Loader
+import Loader from '@/components/Loader.vue'
 
 const w = useWishlistStore()
 const p = useProductsStore()
 
-// фильтруем товары по ID, сохранённым в wishlist
-const list = computed(() => p.items.filter((x) => w.idsArray.includes(x.id)))
+// при открытии страницы — инициализируем wishlist
+onMounted(() => {
+  w.start()
+  if (!p.loaded) p.init()
+})
+
+// 💖 фильтруем товары из products по ID в избранном
+const list = computed(() => {
+  return p.all.filter((x) => w.idsArray.includes(x.id))
+})
 </script>
 
 <template>

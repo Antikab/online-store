@@ -1,6 +1,5 @@
-<!-- views/Catalog.vue -->
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProductsStore } from '@/stores/products'
 import { useWishlistStore } from '@/stores/wishlist'
@@ -11,12 +10,15 @@ const route = useRoute()
 const p = useProductsStore()
 const w = useWishlistStore()
 
+// 🧭 фильтры
 const category = ref<string | null>(null)
 const color = ref<string | null>(null)
 const size = ref<string | null>(null)
 const query = ref<string>('')
 
 const price = ref<[number, number]>([0, 999999])
+
+// обновляем диапазон цен после загрузки товаров
 watch(
   () => p.loaded,
   (v) => {
@@ -25,8 +27,10 @@ watch(
   { immediate: true }
 )
 
+// текущий гендер из маршрута
 const gender = computed<Gender>(() => (route.params.gender as Gender) || 'men')
 
+// сводим фильтры в одно вычисляемое значение
 const filters = computed(() => ({
   gender: gender.value,
   category: category.value,
@@ -36,13 +40,16 @@ const filters = computed(() => ({
   query: query.value || null
 }))
 
-const { container, items, loading, done, resetAndLoad } = useInfiniteProducts(filters, 3)
+// 🔁 Подключаем бесконечную подгрузку
+const { container, items, loading, done, resetAndLoad } = useInfiniteProducts(filters, 6)
 
-async function init() {
-  if (!p.loaded) await p.refresh()
-}
-init()
+// 🧠 Инициализация: сначала загружаем товары и избранное
+onMounted(async () => {
+  await Promise.all([p.init(), w.start()])
+  resetAndLoad()
+})
 
+// 🔄 Сброс фильтров
 function resetFilters() {
   category.value = color.value = size.value = null
   query.value = ''
@@ -59,6 +66,7 @@ function resetFilters() {
     >
       <h3 class="text-lg font-semibold text-neutral-800">Фильтры</h3>
 
+      <!-- Поиск -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Поиск</label>
         <input
@@ -68,6 +76,7 @@ function resetFilters() {
         />
       </div>
 
+      <!-- Категория -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Категория</label>
         <select
@@ -79,6 +88,7 @@ function resetFilters() {
         </select>
       </div>
 
+      <!-- Цвет -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Цвет</label>
         <select
@@ -90,6 +100,7 @@ function resetFilters() {
         </select>
       </div>
 
+      <!-- Размер -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Размер</label>
         <select
@@ -101,6 +112,7 @@ function resetFilters() {
         </select>
       </div>
 
+      <!-- Цена -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Цена</label>
         <div class="flex items-center gap-2">
@@ -122,6 +134,7 @@ function resetFilters() {
         </div>
       </div>
 
+      <!-- Сброс -->
       <button
         @click="resetFilters"
         class="mt-3 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition rounded-xl py-2 text-sm font-medium"
@@ -132,37 +145,46 @@ function resetFilters() {
 
     <!-- Сетка товаров -->
     <section ref="container" class="flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-      <article
-        v-for="prod in items"
-        :key="prod.id"
-        class="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-neutral-200 flex flex-col"
-      >
-        <RouterLink :to="`/product/${prod.id}`" class="flex flex-col flex-1">
-          <img
-            :src="prod.imageUrls[0]"
-            :alt="prod.title"
-            class="h-64 w-full object-cover transition-transform duration-300 hover:scale-105"
-          />
-          <div class="p-3 flex flex-col justify-between flex-1">
-            <h4 class="font-semibold text-neutral-800 line-clamp-1">{{ prod.title }}</h4>
-            <p class="text-sm text-neutral-500 mt-1">{{ prod.price.toFixed(2) }} $</p>
-          </div>
-        </RouterLink>
+      <!-- Скелетон -->
+      <template v-if="!p.loaded">
+        <div v-for="n in 6" :key="n" class="animate-pulse bg-gray-100 h-72 rounded-2xl"></div>
+      </template>
 
-        <button
-          @click="w.toggle(prod.id)"
-          class="border-t border-neutral-200 py-2 text-lg hover:bg-neutral-100 transition"
+      <!-- Товары -->
+      <template v-else>
+        <article
+          v-for="prod in items"
+          :key="prod.id"
+          class="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-neutral-200 flex flex-col"
         >
-          <span :class="w.isIn(prod.id) ? 'text-red-500' : 'text-neutral-400'">
-            {{ w.isIn(prod.id) ? '♥' : '♡' }}
-          </span>
-        </button>
-      </article>
+          <RouterLink :to="`/product/${prod.id}`" class="flex flex-col flex-1">
+            <img
+              :src="prod.imageUrls[0]"
+              :alt="prod.title"
+              class="h-64 w-full object-cover transition-transform duration-300 hover:scale-105"
+            />
+            <div class="p-3 flex flex-col justify-between flex-1">
+              <h4 class="font-semibold text-neutral-800 line-clamp-1">{{ prod.title }}</h4>
+              <p class="text-sm text-neutral-500 mt-1">{{ prod.price.toFixed(2) }} $</p>
+            </div>
+          </RouterLink>
 
-      <div class="col-span-full text-center py-8 text-neutral-500">
-        <span v-if="loading">Загрузка…</span>
-        <span v-else-if="done">Больше товаров нет</span>
-      </div>
+          <button
+            @click="w.toggle(prod.id)"
+            class="border-t border-neutral-200 py-2 text-lg hover:bg-neutral-100 transition"
+          >
+            <span :class="w.isIn(prod.id) ? 'text-red-500' : 'text-neutral-400'">
+              {{ w.isIn(prod.id) ? '♥' : '♡' }}
+            </span>
+          </button>
+        </article>
+
+        <!-- Footer -->
+        <div class="col-span-full text-center py-8 text-neutral-500">
+          <span v-if="loading">Загрузка…</span>
+          <span v-else-if="done">Больше товаров нет</span>
+        </div>
+      </template>
     </section>
   </div>
 </template>

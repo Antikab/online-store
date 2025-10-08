@@ -12,11 +12,18 @@ const cart = useCartStore()
 const product = ref(pStore.byId(route.params.id as string) || null)
 
 onMounted(async () => {
-  if (!product.value) product.value = await pStore.fetchOne(route.params.id as string)
+  // гарантируем, что продукты загружены
+  if (!pStore.loaded) await pStore.init()
+
+  // если товара нет в кэше — тянем отдельно
+  if (!product.value) {
+    product.value = await pStore.fetchOne(route.params.id as string)
+  }
 })
 
 const mainIndex = ref(0)
 const mainImg = computed(() => product.value?.imageUrls[mainIndex.value] ?? '')
+
 function pick(i: number) {
   mainIndex.value = i
 }
