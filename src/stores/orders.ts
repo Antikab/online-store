@@ -1,6 +1,5 @@
-// stores/orders.ts
-import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { defineStore, storeToRefs } from 'pinia'
+import { ref, watch } from 'vue'
 import { supabase } from '@/supabase'
 import { useAuthStore } from './auth'
 import type { DeliveryForm } from '@/types'
@@ -50,7 +49,9 @@ function mapRow(row: OrderRow): OrderEntity {
 
 export const useOrdersStore = defineStore('orders', () => {
   const list = ref<OrderEntity[]>([])
-  const loading = ref(false)
+  const loading = ref(true)
+  const auth = useAuthStore()
+  const { uid } = storeToRefs(auth)
 
   async function refresh(uid: string) {
     loading.value = true
@@ -66,7 +67,6 @@ export const useOrdersStore = defineStore('orders', () => {
   }
 
   async function init() {
-    const auth = useAuthStore()
     if (!auth.uid) {
       list.value = []
       loading.value = false
@@ -75,11 +75,21 @@ export const useOrdersStore = defineStore('orders', () => {
     await refresh(auth.uid)
   }
 
+  watch(
+    uid,
+    async (newUid, oldUid) => {
+      if (newUid) {
+        await refresh(newUid)
+      } else {
+        list.value = []
+      }
+    },
+    { immediate: true }
+  )
+
   async function placeOrder(order: OrderPayload) {
-    const auth = useAuthStore()
     if (!auth.uid) throw new Error('auth required')
     if (!order.items?.length) throw new Error('empty order')
-    if (order.amounts.total < 0) throw new Error('invalid total')
 
     const row = {
       user_id: auth.uid,
@@ -92,8 +102,6 @@ export const useOrdersStore = defineStore('orders', () => {
 
     const { data, error } = await supabase.from('orders').insert(row).select('id').single()
     if (error) throw error
-
-    // добавим в список локально, чтобы сразу показывалось
     list.value.unshift({ id: data!.id as string, ...order })
     return data!.id as string
   }

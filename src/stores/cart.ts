@@ -1,4 +1,3 @@
-// stores/cart.ts
 import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch, type WatchStopHandle } from 'vue'
 import { supabase } from '@/supabase'
@@ -18,7 +17,6 @@ type CartRow = {
 }
 
 const GUEST_KEY = 'guest_cart_v1'
-
 const cidOf = (k: CartItemKey) => `${k.productId}_${k.color}_${k.size}`
 
 function mapRow(row: CartRow): CartItem {
@@ -39,14 +37,20 @@ function mapRow(row: CartRow): CartItem {
 export const useCartStore = defineStore('cart', () => {
   const items = ref<Record<string, CartItem>>({})
   const isGuest = ref(true)
+  const loading = ref(true)
   let stopAuthWatch: WatchStopHandle | null = null
 
+  /* ============================
+     🧱 Local guest storage
+  ============================ */
   function loadGuest() {
     try {
       const raw = localStorage.getItem(GUEST_KEY)
       items.value = raw ? JSON.parse(raw) : {}
     } catch {
       items.value = {}
+    } finally {
+      loading.value = false
     }
   }
   function saveGuest() {
@@ -57,7 +61,11 @@ export const useCartStore = defineStore('cart', () => {
     items.value = {}
   }
 
+  /* ============================
+    🔄 Server sync
+  ============================ */
   async function refresh(uid: string) {
+    loading.value = true
     const { data, error } = await supabase
       .from('cart_items')
       .select('user_id,product_id,color,size,quantity,added_at,price,title,image')
@@ -71,12 +79,12 @@ export const useCartStore = defineStore('cart', () => {
       next[cid] = mapRow(row)
     }
     items.value = next
+    loading.value = false
   }
 
   async function syncGuestToUser(uid: string) {
     const guest = { ...items.value }
     if (!Object.keys(guest).length) return
-
     const rows = Object.values(guest).map((it) => ({
       user_id: uid,
       product_id: it.productId,
@@ -92,11 +100,13 @@ export const useCartStore = defineStore('cart', () => {
       .from('cart_items')
       .upsert(rows, { onConflict: 'user_id,product_id,color,size' })
     if (error) throw error
-
     clearGuest()
     await refresh(uid)
   }
 
+  /* ============================
+     💖 Mutations
+  ============================ */
   async function add(p: Product, color: string, size: string, quantity = 1) {
     const cid = cidOf({ productId: p.id, color, size })
     const base: CartItem = {
@@ -139,12 +149,7 @@ export const useCartStore = defineStore('cart', () => {
       },
       { onConflict: 'user_id,product_id,color,size' }
     )
-
-    if (error) {
-      if (existing) items.value[cid] = existing
-      else delete items.value[cid]
-      throw error
-    }
+    if (error) throw error
   }
 
   async function setQty(cid: string, quantity: number) {
@@ -226,6 +231,9 @@ export const useCartStore = defineStore('cart', () => {
     }
   }
 
+  /* ============================
+     🚀 Init & Watch
+  ============================ */
   const list = computed(() => Object.values(items.value))
   const subtotal = computed(() => list.value.reduce((s, i) => s + i.price * i.quantity, 0))
 
@@ -234,6 +242,15 @@ export const useCartStore = defineStore('cart', () => {
     const auth = useAuthStore()
     const { uid } = storeToRefs(auth)
 
+    // 🔹 если пользователь уже авторизован при старте — подгружаем корзину
+    if (auth.uid) {
+      refresh(auth.uid)
+      isGuest.value = false
+    } else {
+      loadGuest()
+    }
+
+    // 🔹 следим за изменением авторизации
     stopAuthWatch = watch(
       uid,
       async (newUid, oldUid) => {
@@ -253,11 +270,11 @@ export const useCartStore = defineStore('cart', () => {
           loadGuest()
         }
       },
-      { immediate: true }
+      { immediate: false }
     )
   }
 
   const cid = (p: string, c: string, s: string) => cidOf({ productId: p, color: c, size: s })
 
-  return { items, list, subtotal, isGuest, start, add, setQty, removeItem, clear, cid }
+  return { items, list, subtotal, isGuest, loading, start, add, setQty, removeItem, clear, cid }
 })

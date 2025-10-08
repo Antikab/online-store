@@ -14,24 +14,22 @@ import { useOrdersStore } from '@/stores/orders'
 
 const app = createApp(App)
 const pinia = createPinia()
-
 app.use(pinia)
 app.use(router)
 
-// 1) запустить auth/продукты
-useAuthStore().initAuthWatcher()
-useProductsStore().init()
+const auth = useAuthStore()
+await auth.initAuthWatcher() // 👈 ждём восстановления сессии
 
-// 2) стартовать сто́ры, которые должны работать и для гостя
+// после этого uid уже точно известен
+useProductsStore().init()
 useCartStore().start()
 useWishlistStore().start()
 useCouponsStore().start()
 
-// 3) заказы: инициализация сейчас + повторная при смене пользователя
 const orders = useOrdersStore()
-orders.init()
+await orders.init()
 
-useAuthStore().$subscribe(() => {
+auth.$subscribe(() => {
   orders.init()
 })
 

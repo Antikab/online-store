@@ -12,7 +12,7 @@ const newPassword = ref('')
 const ok = ref(false)
 
 const canSubmit = computed(
-  () => !loading.value && !!currentPassword.value && newPassword.value.length >= 8
+  () => !loading.value && !!currentPassword.value && newPassword.value.length >= 6
 )
 
 async function onSubmit() {
@@ -74,14 +74,14 @@ watch([currentPassword, newPassword], () => {
           id="new"
           v-model="newPassword"
           type="password"
-          minlength="8"
+          minlength="6"
           autocomplete="new-password"
           required
           aria-describedby="pw-hint"
-          :aria-invalid="!!newPassword && newPassword.length < 8"
+          :aria-invalid="!!newPassword && newPassword.length < 6"
           class="w-full border rounded-lg px-3 py-2 focus:ring focus:ring-blue-100"
         />
-        <small id="pw-hint" class="text-gray-500 text-xs">Minimum 8 characters.</small>
+        <small id="pw-hint" class="text-gray-500 text-xs">Minimum 6 characters.</small>
       </div>
 
       <button

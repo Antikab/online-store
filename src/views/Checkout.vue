@@ -77,7 +77,13 @@ async function submit() {
       createdAt: Date.now()
     })
 
+    // ✅ очищаем корзину
     await cart.clear()
+
+    // ✅ сбрасываем купон
+    coupons.reset()
+
+    // ✅ переходим на страницу успеха
     router.push('/success')
   } finally {
     placing.value = false
