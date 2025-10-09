@@ -12,13 +12,8 @@ const cart = useCartStore()
 const product = ref(pStore.byId(route.params.id as string) || null)
 
 onMounted(async () => {
-  // гарантируем, что продукты загружены
   if (!pStore.loaded) await pStore.init()
-
-  // если товара нет в кэше — тянем отдельно
-  if (!product.value) {
-    product.value = await pStore.fetchOne(route.params.id as string)
-  }
+  if (!product.value) product.value = await pStore.fetchOne(route.params.id as string)
 })
 
 const mainIndex = ref(0)

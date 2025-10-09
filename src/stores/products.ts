@@ -5,10 +5,12 @@ import { supabase } from '@/supabase'
 import type { Product, Gender } from '@/types'
 
 export const useProductsStore = defineStore('products', () => {
+  /* ──────────────── STATE ──────────────── */
   const all = ref<Product[]>([])
   const loaded = ref(false)
 
-  // 🔢 Цены
+  /* ──────────────── GETTERS ──────────────── */
+  // Минимальная и максимальная цена
   const priceMin = computed(() =>
     all.value.length ? Math.min(...all.value.map((p) => p.price)) : 0
   )
@@ -16,20 +18,53 @@ export const useProductsStore = defineStore('products', () => {
     all.value.length ? Math.max(...all.value.map((p) => p.price)) : 100000
   )
 
-  // 🧠 Загрузка всех товаров
-  async function init() {
-    if (loaded.value) return
+  // Уникальные категории, цвета и размеры
+  const categories = computed(() => [...new Set(all.value.map((p) => p.category))].filter(Boolean))
+  const colors = computed(() => [...new Set(all.value.flatMap((p) => p.colors))].filter(Boolean))
+  const sizes = computed(() => [...new Set(all.value.flatMap((p) => p.sizes))].filter(Boolean))
 
-    const { data, error } = await supabase
+  /* ──────────────── FETCH PAGE ──────────────── */
+  async function fetchPage({
+    page = 1,
+    perPage = 6,
+    gender,
+    category,
+    color,
+    size,
+    priceRange,
+    query
+  }: {
+    page?: number
+    perPage?: number
+    gender?: Gender
+    category?: string | null
+    color?: string | null
+    size?: string | null
+    priceRange?: [number, number]
+    query?: string | null
+  }) {
+    const from = (page - 1) * perPage
+    const to = from + perPage - 1
+
+    let q = supabase
       .from('products')
       .select(
         'id,title,gender,category,price,colors,sizes,image_urls,description,is_active,extra,video_url'
       )
       .eq('is_active', true)
+      .range(from, to)
 
+    if (gender) q = q.eq('gender', gender)
+    if (category) q = q.eq('category', category)
+    if (color) q = q.contains('colors', [color])
+    if (size) q = q.contains('sizes', [size])
+    if (priceRange) q = q.gte('price', priceRange[0]).lte('price', priceRange[1])
+    if (query) q = q.ilike('title', `%${query}%`)
+
+    const { data, error } = await q
     if (error) throw error
 
-    all.value = (data ?? []).map((r) => ({
+    const rows = (data ?? []).map((r) => ({
       id: r.id,
       title: r.title,
       gender: (r.gender as Gender) || 'men',
@@ -40,22 +75,14 @@ export const useProductsStore = defineStore('products', () => {
       imageUrls: r.image_urls ?? [],
       description: r.description ?? '',
       extra: r.extra ?? null,
-      videoUrl: r.video_url ?? null // ✅ правильно!
+      videoUrl: r.video_url ?? null
     }))
 
-    loaded.value = true
+    return rows
   }
 
-  // 🔍 Поиск по id (кэш)
-  function byId(id: string): Product | null {
-    return all.value.find((p) => p.id === id) ?? null
-  }
-
-  // 🌐 Загрузка одного товара (если нет в кэше)
+  /* ──────────────── FETCH ONE (single product) ──────────────── */
   async function fetchOne(id: string): Promise<Product | null> {
-    const cached = byId(id)
-    if (cached) return cached
-
     const { data, error } = await supabase
       .from('products')
       .select(
@@ -79,25 +106,54 @@ export const useProductsStore = defineStore('products', () => {
       imageUrls: data.image_urls ?? [],
       description: data.description ?? '',
       extra: data.extra ?? null,
-      videoUrl: data.video_url ?? null // ✅
+      videoUrl: data.video_url ?? null
     }
 
-    // кэшируем в all, чтобы при возврате не подгружать повторно
-    all.value.push(product)
+    // Добавляем в кеш, если его там нет
+    if (!all.value.some((p) => p.id === product.id)) all.value.push(product)
     return product
   }
 
-  // 🏷️ Фильтры
-  const categories = computed(() => [...new Set(all.value.map((p) => p.category))].filter(Boolean))
-  const colors = computed(() => [...new Set(all.value.flatMap((p) => p.colors))].filter(Boolean))
-  const sizes = computed(() => [...new Set(all.value.flatMap((p) => p.sizes))].filter(Boolean))
+  /* ──────────────── BY ID (from cache) ──────────────── */
+  function byId(id: string): Product | null {
+    return all.value.find((p) => p.id === id) || null
+  }
 
+  /* ──────────────── INIT (для фильтров) ──────────────── */
+  async function init() {
+    if (loaded.value) return
+
+    const { data, error } = await supabase
+      .from('products')
+      .select('id,title,category,price,colors,sizes,is_active')
+      .eq('is_active', true)
+
+    if (error) throw error
+
+    all.value = (data ?? []).map((r) => ({
+      id: r.id,
+      title: r.title ?? '',
+      gender: 'men', // placeholder, неважно для фильтров
+      category: r.category ?? null,
+      price: Number(r.price ?? 0),
+      colors: r.colors ?? [],
+      sizes: r.sizes ?? [],
+      imageUrls: [],
+      description: '',
+      extra: null,
+      videoUrl: null
+    }))
+    loaded.value = true
+  }
+
+  /* ──────────────── RETURN ──────────────── */
   return {
     all,
     loaded,
     init,
-    byId,
+    fetchPage,
     fetchOne,
+    byId,
     priceMin,
     priceMax,
     categories,

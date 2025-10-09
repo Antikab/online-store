@@ -17,20 +17,27 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
+// ⏳ 1. ждем восстановления сессии
 const auth = useAuthStore()
-await auth.initAuthWatcher() // 👈 ждём восстановления сессии
+await auth.initAuthWatcher()
 
-// после этого uid уже точно известен
-useProductsStore().init()
-useCartStore().start()
-useWishlistStore().start()
+// ⏳ 2. инициализируем продукты
+const products = useProductsStore()
+await products.init()
+
+// ⏳ 3. инициализируем корзину и избранное
+const cart = useCartStore()
+cart.start()
+
+const wishlist = useWishlistStore()
+await wishlist.start()
+
+// ⏳ 4. купоны и заказы
 useCouponsStore().start()
-
 const orders = useOrdersStore()
 await orders.init()
 
-auth.$subscribe(() => {
-  orders.init()
-})
+auth.$subscribe(() => orders.init())
 
+// ✅ только теперь монтируем
 app.mount('#app')

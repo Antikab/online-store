@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProductsStore } from '@/stores/products'
 import { useWishlistStore } from '@/stores/wishlist'
@@ -18,7 +18,6 @@ const query = ref<string>('')
 
 const price = ref<[number, number]>([0, 999999])
 
-// обновляем диапазон цен после загрузки товаров
 watch(
   () => p.loaded,
   (v) => {
@@ -30,7 +29,7 @@ watch(
 // текущий гендер из маршрута
 const gender = computed<Gender>(() => (route.params.gender as Gender) || 'men')
 
-// сводим фильтры в одно вычисляемое значение
+// сводим фильтры
 const filters = computed(() => ({
   gender: gender.value,
   category: category.value,
@@ -40,21 +39,41 @@ const filters = computed(() => ({
   query: query.value || null
 }))
 
-// 🔁 Подключаем бесконечную подгрузку
-const { container, items, loading, done, resetAndLoad } = useInfiniteProducts(filters, 6)
+// 🔁 подключаем useInfiniteProducts
+const { items, loading, done, loadMore, resetAndLoad } = useInfiniteProducts(filters, 6)
 
-// 🧠 Инициализация: сначала загружаем товары и избранное
+// 🧠 инициализация
 onMounted(async () => {
   await Promise.all([p.init(), w.start()])
-  resetAndLoad()
+  if (p.all.length) resetAndLoad()
+  window.addEventListener('scroll', handleScroll) // ← слушаем окно
 })
 
-// 🔄 Сброс фильтров
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+})
+
+// ⚙️ обновление при смене gender
+watch(gender, () => resetAndLoad())
+
+// 🔄 сброс фильтров
 function resetFilters() {
   category.value = color.value = size.value = null
   query.value = ''
-  price.value = [p.priceMin, p.priceMax]
+  price.value = [Math.max(0, p.priceMin), Math.max(0, p.priceMax)]
   resetAndLoad()
+}
+
+// 🧷 функция, вызывающая loadMore при прокрутке окна
+function handleScroll() {
+  const scrollTop = window.scrollY
+  const windowHeight = window.innerHeight
+  const docHeight = document.documentElement.scrollHeight
+
+  // если остаётся меньше 100 px до конца страницы → догружаем
+  if (!loading.value && !done.value && docHeight - (scrollTop + windowHeight) < 100) {
+    loadMore()
+  }
 }
 </script>
 
@@ -144,18 +163,16 @@ function resetFilters() {
     </aside>
 
     <!-- Сетка товаров -->
-    <section ref="container" class="flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-      <!-- Скелетон -->
+    <section class="flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
       <template v-if="!p.loaded">
         <div v-for="n in 6" :key="n" class="animate-pulse bg-gray-100 h-72 rounded-2xl"></div>
       </template>
 
-      <!-- Товары -->
       <template v-else>
         <article
           v-for="prod in items"
           :key="prod.id"
-          class="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-neutral-200 flex flex-col"
+          class="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-neutral-200 flex flex-col animate-fadeIn"
         >
           <RouterLink :to="`/product/${prod.id}`" class="flex flex-col flex-1">
             <img
@@ -179,7 +196,6 @@ function resetFilters() {
           </button>
         </article>
 
-        <!-- Footer -->
         <div class="col-span-full text-center py-8 text-neutral-500">
           <span v-if="loading">Загрузка…</span>
           <span v-else-if="done">Больше товаров нет</span>
