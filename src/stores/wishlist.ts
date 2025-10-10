@@ -1,42 +1,43 @@
-// stores/wishlist.ts
-import { defineStore, storeToRefs } from 'pinia'
+import { defineStore } from 'pinia'
 import { ref, computed, watch, type WatchStopHandle } from 'vue'
 import { supabase } from '@/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useProductsStore } from '@/stores/products'
 
 type WishlistRow = {
-  id: string
-  user_id: string
   product_id: string
-  created_at: string
-  added_at: string
-  image: string | null
-  price: number | null
-  color: string | null
-  size: string | null
+  products?: {
+    id: string
+    title: string
+    price: number
+    image_urls: string[]
+  }
 }
 
 const GUEST_KEY = 'guest_wishlist_v1'
 
 export const useWishlistStore = defineStore('wishlist', () => {
+  // 🧩 Состояние
   const ids = ref<Set<string>>(new Set())
   const idsArray = computed(() => Array.from(ids.value))
+  const products = ref<any[]>([])
   const loading = ref(true)
+  const ready = ref(false) // 👈 флаг готовности стора
   const isGuest = ref(true)
   let stopAuthWatch: WatchStopHandle | null = null
 
-  /* ================= 🧱 Local guest storage ================= */
+  /* ================= Гостевой режим ================= */
   function loadGuest() {
     try {
       const raw = localStorage.getItem(GUEST_KEY)
       const arr: string[] = raw ? JSON.parse(raw) : []
-      console.log('[wishlist] loadGuest →', arr)
       ids.value = new Set(arr)
     } catch {
       ids.value = new Set()
-    } finally {
-      loading.value = false
     }
+    products.value = [] // гости не хранят подробные данные
+    loading.value = false
+    ready.value = true
   }
 
   function saveGuest() {
@@ -46,12 +47,27 @@ export const useWishlistStore = defineStore('wishlist', () => {
   function clearGuest() {
     localStorage.removeItem(GUEST_KEY)
     ids.value = new Set()
+    products.value = []
   }
 
-  /* ================= 🔄 Server sync ================= */
+  /* ================= Загрузка из Supabase ================= */
   async function refresh(uid: string) {
     loading.value = true
-    const { data, error } = await supabase.from('wishlists').select('product_id').eq('user_id', uid)
+
+    const { data, error } = await supabase
+      .from('wishlists')
+      .select(
+        `
+        product_id,
+        products (
+          id,
+          title,
+          price,
+          image_urls
+        )
+      `
+      )
+      .eq('user_id', uid)
 
     if (error) {
       console.error('[wishlist] refresh error:', error)
@@ -61,39 +77,40 @@ export const useWishlistStore = defineStore('wishlist', () => {
 
     const rows = (data as WishlistRow[]) ?? []
     ids.value = new Set(rows.map((r) => r.product_id))
+    products.value = rows
+      .map((r) => r.products)
+      .filter(Boolean)
+      .map((p) => ({
+        id: p!.id,
+        title: p!.title,
+        price: Number(p!.price ?? 0),
+        imageUrls: p!.image_urls ?? []
+      }))
+
     loading.value = false
+    ready.value = true
   }
 
-  // 🔁 Перенос из localStorage → Supabase при входе
+  /* ================= Перенос гостевого списка ================= */
   async function syncGuestToUser(uid: string) {
     const guestArr = Array.from(ids.value)
     if (!guestArr.length) return
 
     console.log('[wishlist] merging guest wishlist →', guestArr)
 
-    // 1️⃣ Получаем то, что уже есть у пользователя в базе
-    const { data: existing, error: fetchErr } = await supabase
+    const { data: existing } = await supabase
       .from('wishlists')
       .select('product_id')
       .eq('user_id', uid)
 
-    if (fetchErr) {
-      console.error('[wishlist] failed to load existing wishlist:', fetchErr)
-      return
-    }
-
     const existingIds = new Set((existing ?? []).map((r) => r.product_id))
-
-    // 2️⃣ Находим только новые ID (которых нет в базе)
     const newIds = guestArr.filter((id) => !existingIds.has(id))
     if (!newIds.length) {
-      console.log('[wishlist] all guest items already exist → skip insert')
       clearGuest()
       await refresh(uid)
       return
     }
 
-    // 3️⃣ Подготавливаем строки для вставки
     const rows = newIds.map((productId) => ({
       user_id: uid,
       product_id: productId,
@@ -101,34 +118,29 @@ export const useWishlistStore = defineStore('wishlist', () => {
       added_at: new Date().toISOString()
     }))
 
-    // 4️⃣ Вставляем только новые записи
     const { error } = await supabase.from('wishlists').insert(rows)
+    if (error) console.error('[wishlist] syncGuestToUser error:', error)
 
-    if (error) {
-      // иногда Supabase может вернуть 42501 (RLS), просто логируем
-      if (error.code === '42501') {
-        console.warn('[wishlist] insert blocked by RLS (ignored):', error.message)
-      } else {
-        console.error('[wishlist] syncGuestToUser error:', error)
-      }
-    } else {
-      console.log(`[wishlist] merged ${newIds.length} new items into database`)
-    }
-
-    // 5️⃣ Очищаем localStorage и обновляем store
     clearGuest()
     await refresh(uid)
   }
 
-  /* ================= 💖 Toggle item ================= */
+  /* ================= Добавить / Удалить ================= */
   async function toggle(id: string) {
     const auth = useAuthStore()
     const uid = auth.uid
+    const pStore = useProductsStore()
 
     // 🧭 Гость
     if (isGuest.value || !uid) {
-      if (ids.value.has(id)) ids.value.delete(id)
-      else ids.value.add(id)
+      if (ids.value.has(id)) {
+        ids.value.delete(id)
+        products.value = products.value.filter((p) => p.id !== id)
+      } else {
+        ids.value.add(id)
+        const prod = pStore.byId?.(id)
+        if (prod) products.value.push(prod)
+      }
       saveGuest()
       return
     }
@@ -138,36 +150,55 @@ export const useWishlistStore = defineStore('wishlist', () => {
 
     if (had) {
       ids.value.delete(id)
+      products.value = products.value.filter((p) => p.id !== id)
       const { error } = await supabase
         .from('wishlists')
         .delete()
         .eq('user_id', uid)
         .eq('product_id', id)
-      if (error) {
-        ids.value.add(id) // rollback
-        console.error('[wishlist] delete error', error)
-      }
+      if (error) console.error('[wishlist] delete error', error)
     } else {
       ids.value.add(id)
-      const { error } = await supabase.from('wishlists').upsert({
-        user_id: uid,
-        product_id: id,
-        created_at: new Date().toISOString(),
-        added_at: new Date().toISOString()
-      })
-      if (error) {
-        ids.value.delete(id)
+
+      const { data, error } = await supabase
+        .from('wishlists')
+        .insert({
+          user_id: uid,
+          product_id: id,
+          created_at: new Date().toISOString(),
+          added_at: new Date().toISOString()
+        })
+        .select(
+          `
+          products (
+            id,
+            title,
+            price,
+            image_urls
+          )
+        `
+        )
+        .single()
+
+      if (!error && data?.products) {
+        const p = data.products
+        products.value.push({
+          id: p.id,
+          title: p.title,
+          price: Number(p.price ?? 0),
+          imageUrls: p.image_urls ?? []
+        })
+      } else if (error) {
         console.error('[wishlist] insert error', error)
       }
     }
   }
 
-  /* ================= 🚀 Init & Watch ================= */
+  /* ================= Инициализация при старте ================= */
   async function start() {
-    if (stopAuthWatch) return
+    if (ready.value) return // ✅ уже инициализирован — выходим
 
     const auth = useAuthStore()
-    const { uid } = storeToRefs(auth)
 
     if (auth.uid) {
       await refresh(auth.uid)
@@ -177,8 +208,9 @@ export const useWishlistStore = defineStore('wishlist', () => {
       isGuest.value = true
     }
 
+    // 👁️ Наблюдаем за изменением статуса авторизации
     stopAuthWatch = watch(
-      uid,
+      () => auth.uid,
       async (newUid, oldUid) => {
         if (newUid) {
           console.log('[wishlist] login detected →', newUid)
@@ -197,13 +229,17 @@ export const useWishlistStore = defineStore('wishlist', () => {
     )
   }
 
+  /* ================= Экспорт API ================= */
   return {
     ids,
     idsArray,
+    products,
     isGuest,
     loading,
+    ready,
     toggle,
     start,
+    refresh,
     isIn: (id: string) => ids.value.has(id)
   }
 })

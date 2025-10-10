@@ -1,5 +1,5 @@
 // composables/useInfiniteProducts.ts
-import { ref, watch, type Ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, watch, type Ref, onMounted } from 'vue'
 import { useInfiniteScroll } from '@vueuse/core'
 import { useProductsStore } from '@/stores/products'
 import type { Product, Gender } from '@/types'
@@ -13,21 +13,20 @@ type Filters = {
   query?: string | null
 }
 
-export function useInfiniteProducts(filtersRef: Ref<Filters>, perPage = 6) {
+export function useInfiniteProducts(filtersRef: Ref<Filters>, perPage = 9) {
   const p = useProductsStore()
   const items = ref<Product[]>([])
   const page = ref(1)
   const loading = ref(false)
   const done = ref(false)
   const error = ref<string | null>(null)
-  const container = ref<HTMLElement | null>(null)
 
   async function loadMore() {
     if (loading.value || done.value) return
     loading.value = true
     try {
       const rows = await p.fetchPage({ page: page.value, perPage, ...filtersRef.value })
-      if (rows.length === 0) done.value = true
+      if (!rows.length) done.value = true
       else {
         items.value.push(...rows)
         page.value++
@@ -47,16 +46,25 @@ export function useInfiniteProducts(filtersRef: Ref<Filters>, perPage = 6) {
     loadMore()
   }
 
-  watch(filtersRef, () => resetAndLoad(), { deep: true })
+  // 🔁 при смене фильтров всё перезапускаем
+  watch(filtersRef, resetAndLoad, { deep: true })
+
+  // ♾️ Автоподгрузка при прокрутке страницы
+  useInfiniteScroll(
+    window, // 👈 слушаем глобальный scroll
+    () => {
+      if (!loading.value && !done.value) loadMore()
+    },
+    {
+      distance: 300, // за сколько пикселей до низа страницы подгружать
+      canLoadMore: () => !done.value && !loading.value
+    }
+  )
 
   onMounted(async () => {
     if (!p.loaded) await p.init()
     resetAndLoad()
-    await nextTick()
-    useInfiniteScroll(container, loadMore, { distance: 200 })
   })
 
-  onBeforeUnmount(() => (items.value = []))
-
-  return { container, items, loading, done, error, loadMore, resetAndLoad }
+  return { items, loading, done, error, resetAndLoad }
 }

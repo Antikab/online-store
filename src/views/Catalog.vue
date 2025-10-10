@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProductsStore } from '@/stores/products'
 import { useWishlistStore } from '@/stores/wishlist'
@@ -10,12 +10,11 @@ const route = useRoute()
 const p = useProductsStore()
 const w = useWishlistStore()
 
-// 🧭 фильтры
+// 🎛 фильтры
 const category = ref<string | null>(null)
 const color = ref<string | null>(null)
 const size = ref<string | null>(null)
 const query = ref<string>('')
-
 const price = ref<[number, number]>([0, 999999])
 
 watch(
@@ -26,10 +25,7 @@ watch(
   { immediate: true }
 )
 
-// текущий гендер из маршрута
 const gender = computed<Gender>(() => (route.params.gender as Gender) || 'men')
-
-// сводим фильтры
 const filters = computed(() => ({
   gender: gender.value,
   category: category.value,
@@ -39,53 +35,30 @@ const filters = computed(() => ({
   query: query.value || null
 }))
 
-// 🔁 подключаем useInfiniteProducts
-const { items, loading, done, loadMore, resetAndLoad } = useInfiniteProducts(filters, 6)
+// ♾️ Подключаем useInfiniteScroll версию composable
+const { items, loading, done, resetAndLoad } = useInfiniteProducts(filters, 9)
 
-// 🧠 инициализация
 onMounted(async () => {
   await Promise.all([p.init(), w.start()])
   if (p.all.length) resetAndLoad()
-  window.addEventListener('scroll', handleScroll) // ← слушаем окно
 })
 
-onUnmounted(() => {
-  window.removeEventListener('scroll', handleScroll)
-})
-
-// ⚙️ обновление при смене gender
-watch(gender, () => resetAndLoad())
-
-// 🔄 сброс фильтров
 function resetFilters() {
   category.value = color.value = size.value = null
   query.value = ''
   price.value = [Math.max(0, p.priceMin), Math.max(0, p.priceMax)]
   resetAndLoad()
 }
-
-// 🧷 функция, вызывающая loadMore при прокрутке окна
-function handleScroll() {
-  const scrollTop = window.scrollY
-  const windowHeight = window.innerHeight
-  const docHeight = document.documentElement.scrollHeight
-
-  // если остаётся меньше 100 px до конца страницы → догружаем
-  if (!loading.value && !done.value && docHeight - (scrollTop + windowHeight) < 100) {
-    loadMore()
-  }
-}
 </script>
 
 <template>
   <div class="flex flex-col md:flex-row gap-6 p-6">
-    <!-- Фильтры -->
+    <!-- 🧭 Фильтры -->
     <aside
       class="w-full md:w-64 flex flex-col gap-4 bg-white p-4 rounded-2xl shadow-sm border border-neutral-200 h-fit sticky top-6"
     >
       <h3 class="text-lg font-semibold text-neutral-800">Фильтры</h3>
 
-      <!-- Поиск -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Поиск</label>
         <input
@@ -95,7 +68,6 @@ function handleScroll() {
         />
       </div>
 
-      <!-- Категория -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Категория</label>
         <select
@@ -107,7 +79,6 @@ function handleScroll() {
         </select>
       </div>
 
-      <!-- Цвет -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Цвет</label>
         <select
@@ -119,7 +90,6 @@ function handleScroll() {
         </select>
       </div>
 
-      <!-- Размер -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Размер</label>
         <select
@@ -131,7 +101,6 @@ function handleScroll() {
         </select>
       </div>
 
-      <!-- Цена -->
       <div class="space-y-1">
         <label class="text-sm text-neutral-600">Цена</label>
         <div class="flex items-center gap-2">
@@ -153,7 +122,6 @@ function handleScroll() {
         </div>
       </div>
 
-      <!-- Сброс -->
       <button
         @click="resetFilters"
         class="mt-3 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition rounded-xl py-2 text-sm font-medium"
@@ -162,45 +130,47 @@ function handleScroll() {
       </button>
     </aside>
 
-    <!-- Сетка товаров -->
-    <section class="flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-      <template v-if="!p.loaded">
-        <div v-for="n in 6" :key="n" class="animate-pulse bg-gray-100 h-72 rounded-2xl"></div>
-      </template>
-
-      <template v-else>
-        <article
-          v-for="prod in items"
-          :key="prod.id"
-          class="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-neutral-200 flex flex-col animate-fadeIn"
-        >
-          <RouterLink :to="`/product/${prod.id}`" class="flex flex-col flex-1">
+    <!-- ♾️ Сетка товаров -->
+    <section class="flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 pr-4">
+      <article
+        v-for="prod in items"
+        :key="prod.id"
+        class="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-neutral-200 flex flex-col animate-fadeIn"
+      >
+        <RouterLink :to="`/product/${prod.id}`" class="flex flex-col flex-1">
+          <div class="aspect-[3/4] bg-white flex items-center justify-center">
             <img
               :src="prod.imageUrls[0]"
               :alt="prod.title"
-              class="h-64 w-full object-cover transition-transform duration-300 hover:scale-105"
+              class="max-w-full max-h-full object-contain transition-transform duration-300 hover:scale-105"
             />
-            <div class="p-3 flex flex-col justify-between flex-1">
-              <h4 class="font-semibold text-neutral-800 line-clamp-1">{{ prod.title }}</h4>
-              <p class="text-sm text-neutral-500 mt-1">{{ prod.price.toFixed(2) }} $</p>
-            </div>
-          </RouterLink>
+          </div>
+          <div class="p-3 flex flex-col justify-between flex-1">
+            <h4 class="font-semibold text-neutral-800 line-clamp-1">{{ prod.title }}</h4>
+            <p class="text-sm text-neutral-500 mt-1">{{ prod.price.toFixed(2) }} $</p>
+          </div>
+        </RouterLink>
 
-          <button
-            @click="w.toggle(prod.id)"
-            class="border-t border-neutral-200 py-2 text-lg hover:bg-neutral-100 transition"
-          >
-            <span :class="w.isIn(prod.id) ? 'text-red-500' : 'text-neutral-400'">
-              {{ w.isIn(prod.id) ? '♥' : '♡' }}
-            </span>
-          </button>
-        </article>
+        <button
+          @click="w.toggle(prod.id)"
+          class="border-t border-neutral-200 py-2 text-lg hover:bg-neutral-100 transition"
+        >
+          <span :class="w.isIn(prod.id) ? 'text-red-500' : 'text-neutral-400'">
+            {{ w.isIn(prod.id) ? '♥' : '♡' }}
+          </span>
+        </button>
+      </article>
 
-        <div class="col-span-full text-center py-8 text-neutral-500">
-          <span v-if="loading">Загрузка…</span>
-          <span v-else-if="done">Больше товаров нет</span>
-        </div>
-      </template>
+      <!-- Загрузчик / Конец списка -->
+      <div class="col-span-full text-center py-8 text-neutral-500">
+        <span v-if="loading">Загрузка…</span>
+        <span v-else-if="done">Больше товаров нет</span>
+      </div>
     </section>
   </div>
+
+  <!-- 🦶 Футер -->
+  <footer class="border-t mt-12 py-6 text-center text-neutral-500">
+    © 2025 Glavapu Shop — Все права защищены
+  </footer>
 </template>

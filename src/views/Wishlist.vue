@@ -1,65 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { supabase } from '@/supabase'
 import { useWishlistStore } from '@/stores/wishlist'
 import Loader from '@/components/Loader.vue'
 
 const w = useWishlistStore()
-const products = ref<any[]>([])
-const loading = ref(true)
-
-async function loadProducts() {
-  loading.value = true
-  const ids = Array.from(w.ids)
-  if (!ids.length) {
-    products.value = []
-    loading.value = false
-    return
-  }
-
-  const { data, error } = await supabase
-    .from('products')
-    .select('id,title,price,image_urls')
-    .in('id', ids)
-
-  if (error) {
-    console.error('[wishlist] loadProducts error', error)
-    products.value = []
-  } else {
-    products.value = data.map((p) => ({
-      id: p.id,
-      title: p.title,
-      price: Number(p.price ?? 0),
-      imageUrls: p.image_urls ?? []
-    }))
-  }
-  loading.value = false
-}
-
-onMounted(async () => {
-  await w.start()
-  await loadProducts()
-})
-
-watch(
-  () => w.idsArray,
-  async () => {
-    await loadProducts()
-  },
-  { deep: true }
-)
 </script>
 
 <template>
-  <div v-if="loading" class="flex items-center justify-center py-20">
+  <div v-if="w.loading" class="flex items-center justify-center py-20">
     <Loader />
   </div>
 
-  <div v-else-if="products.length">
+  <div v-else-if="w.products.length">
     <h1 class="text-2xl font-semibold mb-6 text-gray-800">Избранное</h1>
     <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
       <article
-        v-for="prod in products"
+        v-for="prod in w.products"
         :key="prod.id"
         class="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all"
       >

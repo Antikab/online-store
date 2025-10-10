@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { supabase } from '@/supabase'
 import type { Product, Gender } from '@/types'
+import { parseArray } from '@/utils/parseArray'
 
 export const useProductsStore = defineStore('products', () => {
   /* ──────────────── STATE ──────────────── */
@@ -70,9 +71,9 @@ export const useProductsStore = defineStore('products', () => {
       gender: (r.gender as Gender) || 'men',
       category: r.category,
       price: Number(r.price ?? 0),
-      colors: r.colors ?? [],
-      sizes: r.sizes ?? [],
-      imageUrls: r.image_urls ?? [],
+      colors: parseArray(r.colors),
+      sizes: parseArray(r.sizes),
+      imageUrls: parseArray(r.image_urls),
       description: r.description ?? '',
       extra: r.extra ?? null,
       videoUrl: r.video_url ?? null
@@ -125,7 +126,7 @@ export const useProductsStore = defineStore('products', () => {
 
     const { data, error } = await supabase
       .from('products')
-      .select('id,title,category,price,colors,sizes,is_active')
+      .select('id,title,category,price,colors,sizes,image_urls,is_active')
       .eq('is_active', true)
 
     if (error) throw error
@@ -136,9 +137,9 @@ export const useProductsStore = defineStore('products', () => {
       gender: 'men', // placeholder, неважно для фильтров
       category: r.category ?? null,
       price: Number(r.price ?? 0),
-      colors: r.colors ?? [],
-      sizes: r.sizes ?? [],
-      imageUrls: [],
+      colors: parseArray(r.colors),
+      sizes: parseArray(r.sizes),
+      imageUrls: parseArray(r.image_urls),
       description: '',
       extra: null,
       videoUrl: null
