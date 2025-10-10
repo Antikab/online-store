@@ -64,7 +64,7 @@ const onSubmit = async () => {
 
     await supabase.auth.signOut({ scope: 'global' })
     stage.value = 'done'
-    setTimeout(() => router.push('/login'), 1000)
+    setTimeout(() => router.push('/login'), 1200)
   } catch (e) {
     err.value = msg(e)
   } finally {
@@ -74,11 +74,15 @@ const onSubmit = async () => {
 </script>
 
 <template>
-  <section class="max-w-sm mx-auto mt-20 p-6 bg-white rounded-xl shadow-sm ring-1 ring-gray-200">
-    <h1 class="text-2xl font-semibold mb-6 text-center">Create New Password</h1>
+  <section
+    class="max-w-sm mx-auto mt-20 p-6 bg-white rounded-xl shadow-sm ring-1 ring-gray-200 space-y-6"
+  >
+    <h1 class="text-2xl font-semibold text-center text-gray-800">Create new password</h1>
 
-    <p v-if="stage === 'checking'" class="text-gray-500 text-center">Checking link…</p>
+    <!-- Checking -->
+    <p v-if="stage === 'checking'" class="text-gray-500 text-center">Checking recovery link…</p>
 
+    <!-- OK -->
     <form v-else-if="stage === 'ok'" @submit.prevent="onSubmit" class="flex flex-col gap-4">
       <input
         v-model="pw"
@@ -86,7 +90,7 @@ const onSubmit = async () => {
         minlength="6"
         required
         placeholder="New password"
-        class="border rounded-lg px-3 py-2 focus:ring focus:ring-blue-100"
+        class="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
       />
       <input
         v-model="pw2"
@@ -94,30 +98,32 @@ const onSubmit = async () => {
         minlength="6"
         required
         placeholder="Confirm password"
-        class="border rounded-lg px-3 py-2 focus:ring focus:ring-blue-100"
+        class="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
       />
 
       <button
         type="submit"
         :disabled="!canSubmit() || busy"
-        class="bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
+        class="bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
       >
-        {{ busy ? 'Saving…' : 'Update Password' }}
+        {{ busy ? 'Saving…' : 'Update password' }}
       </button>
 
-      <p v-if="err" class="text-red-500 text-center text-sm">{{ err }}</p>
+      <p v-if="err" class="text-sm text-red-500 text-center">{{ err }}</p>
     </form>
 
-    <p v-else-if="stage === 'done'" class="text-green-600 text-center">
+    <!-- Done -->
+    <p v-else-if="stage === 'done'" class="text-green-600 text-center text-sm">
       Password updated. Redirecting…
     </p>
 
-    <p v-else-if="stage === 'error'" class="text-red-500 text-center">
+    <!-- Error -->
+    <p v-else-if="stage === 'error'" class="text-red-500 text-center text-sm">
       {{ err }}
       <br />
-      <router-link to="/reset-password" class="underline text-blue-600">
+      <RouterLink to="/reset-password" class="text-blue-600 hover:underline">
         Send new link
-      </router-link>
+      </RouterLink>
     </p>
   </section>
 </template>
