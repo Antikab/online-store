@@ -11,7 +11,7 @@ const RESET_REDIRECT_URL = import.meta.env.DEV
   ? 'http://localhost:5173/change-password'
   : `${window.location.origin}/change-password`
 
-export const useAuthStore = defineStore('auth', () => {
+const useAuthStore = defineStore('auth', () => {
   const user = ref<PublicUser | null>(null)
   const loading = ref(false)
   const error = ref('')
@@ -81,13 +81,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(rawEmail: string, password: string) {
+  async function login(email: string, password: string) {
     loading.value = true
     error.value = ''
     try {
-      const normEmail = rawEmail.trim().toLowerCase()
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: normEmail,
+        email,
         password
       })
       if (signInError) throw signInError
@@ -182,3 +181,5 @@ export const useAuthStore = defineStore('auth', () => {
     logout
   }
 })
+
+export { useAuthStore }
