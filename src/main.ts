@@ -1,10 +1,12 @@
 // main.ts
 import './assets/main.css'
+import 'vue-sonner/style.css'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import App from './App.vue'
-import router from './router'
+import App from '@/App.vue'
+import router from '@/router'
 
+// Stores
 import { useAuthStore } from '@/stores/auth'
 import { useProductsStore } from '@/stores/products'
 import { useCartStore } from '@/stores/cart'
@@ -13,31 +15,24 @@ import { useCouponsStore } from '@/stores/coupons'
 import { useOrdersStore } from '@/stores/orders'
 
 const app = createApp(App)
-const pinia = createPinia()
-app.use(pinia)
+app.use(createPinia())
 app.use(router)
 
-// ⏳ 1. ждем восстановления сессии
 const auth = useAuthStore()
-await auth.initAuthWatcher()
-
-// ⏳ 2. инициализируем продукты
-const products = useProductsStore()
-await products.init()
-
-// ⏳ 3. инициализируем корзину и избранное
-const cart = useCartStore()
-cart.start()
-
 const wishlist = useWishlistStore()
-await wishlist.start()
-
-// ⏳ 4. купоны и заказы
-useCouponsStore().start()
+const products = useProductsStore()
+const cart = useCartStore()
+const coupons = useCouponsStore()
 const orders = useOrdersStore()
+
+await auth.initAuthWatcher()
+await products.init()
+await wishlist.start()
+cart.start()
+coupons.start()
 await orders.init()
 
+// при изменении авторизации обновляем заказы
 auth.$subscribe(() => orders.init())
 
-// ✅ только теперь монтируем
 app.mount('#app')

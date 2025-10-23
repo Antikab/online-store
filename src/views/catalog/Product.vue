@@ -1,3 +1,4 @@
+<!-- views/catalog/Product.vue -->
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'

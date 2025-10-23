@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 
 const auth = useAuthStore()
-const { loading, error } = storeToRefs(auth)
+const { loading, errorMessage } = storeToRefs(auth)
 
 const email = ref('')
 const password = ref('')
@@ -53,7 +53,7 @@ async function onSubmit() {
         {{ loading ? 'Creating...' : 'Register' }}
       </button>
 
-      <p v-if="error" class="text-sm text-red-500 text-center">{{ error }}</p>
+      <p v-if="errorMessage" class="text-sm text-red-500 text-center">{{ errorMessage }}</p>
     </form>
 
     <div class="text-center text-sm text-gray-500 mt-6">

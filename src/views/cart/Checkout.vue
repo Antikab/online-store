@@ -1,4 +1,4 @@
-<!-- views/Checkout.vue -->
+<!-- views/cart/Checkout.vue -->
 <script setup lang="ts">
 import { onMounted, reactive, computed, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'

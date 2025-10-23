@@ -1,3 +1,4 @@
+// stores/wishlist.ts
 import { defineStore } from 'pinia'
 import { ref, computed, watch, type WatchStopHandle } from 'vue'
 import { supabase } from '@/supabase'
@@ -32,12 +33,16 @@ export const useWishlistStore = defineStore('wishlist', () => {
       const raw = localStorage.getItem(GUEST_KEY)
       const arr: string[] = raw ? JSON.parse(raw) : []
       ids.value = new Set(arr)
+
+      const pStore = useProductsStore()
+      products.value = arr.map((id) => pStore.byId?.(id)).filter(Boolean)
     } catch {
       ids.value = new Set()
+      products.value = []
+    } finally {
+      loading.value = false
+      ready.value = true
     }
-    products.value = [] // гости не хранят подробные данные
-    loading.value = false
-    ready.value = true
   }
 
   function saveGuest() {

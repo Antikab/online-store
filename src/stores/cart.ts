@@ -1,3 +1,4 @@
+// stores/cart.ts
 import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch, type WatchStopHandle } from 'vue'
 import { supabase } from '@/supabase'
@@ -41,7 +42,7 @@ export const useCartStore = defineStore('cart', () => {
   let stopAuthWatch: WatchStopHandle | null = null
 
   /* ============================
-     🧱 Local guest storage
+    🧱 Local guest storage
   ============================ */
   function loadGuest() {
     try {

@@ -1,3 +1,14 @@
+<!-- components/Header.vue -->
+<script setup lang="ts">
+import { useAuthStore } from '@/stores/auth'
+import { storeToRefs } from 'pinia'
+const auth = useAuthStore()
+const { isAuthed, email } = storeToRefs(auth)
+async function onLogout() {
+  await auth.logout()
+}
+</script>
+
 <template>
   <header class="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
     <nav class="flex gap-3 text-sm">
@@ -34,13 +45,3 @@
     </template>
   </header>
 </template>
-
-<script setup lang="ts">
-import { useAuthStore } from '@/stores/auth'
-import { storeToRefs } from 'pinia'
-const auth = useAuthStore()
-const { isAuthed, email } = storeToRefs(auth)
-async function onLogout() {
-  await auth.logout({ clearGuest: true })
-}
-</script>

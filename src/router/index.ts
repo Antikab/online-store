@@ -1,3 +1,4 @@
+// src/router/index.ts
 import { watch } from 'vue'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { supabase } from '@/supabase'
@@ -34,20 +35,20 @@ const routes: RouteRecordRaw[] = [
   },
 
   // --- SHOP ---
-  { path: '/catalog/:gender(men|women)', component: () => import('@/views/Catalog.vue') },
-  { path: '/product/:id', component: () => import('@/views/Product.vue') },
-  { path: '/cart', component: () => import('@/views/Cart.vue') },
+  { path: '/catalog/:gender(men|women)', component: () => import('@/views/catalog/Catalog.vue') },
+  { path: '/product/:id', component: () => import('@/views/catalog/Product.vue') },
+  { path: '/cart', component: () => import('@/views/cart/Cart.vue') },
   { path: '/wishlist', component: () => import('@/views/Wishlist.vue') },
 
   { path: '/orders', component: () => import('@/views/Orders.vue'), meta: { requiresAuth: true } },
   {
     path: '/checkout',
-    component: () => import('@/views/Checkout.vue'),
+    component: () => import('@/views/cart/Checkout.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/success',
-    component: () => import('@/views/Success.vue'),
+    component: () => import('@/views/cart/Success.vue'),
     meta: { requiresAuth: true }
   },
 

@@ -1,3 +1,4 @@
+// stores/orders.ts
 import { defineStore, storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 import { supabase } from '@/supabase'

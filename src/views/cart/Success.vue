@@ -1,4 +1,4 @@
-<!-- views/Success.vue -->
+<!-- views/cart/Success.vue -->
 <template>
   <div>
     <h1>Заказ оформлен!</h1>

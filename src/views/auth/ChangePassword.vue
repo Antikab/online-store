@@ -62,7 +62,7 @@ const onSubmit = async () => {
     const { error } = await supabase.auth.updateUser({ password: pw.value })
     if (error) throw error
 
-    await supabase.auth.signOut({ scope: 'global' })
+    await supabase.auth.signOut()
     stage.value = 'done'
     setTimeout(() => router.push('/login'), 1200)
   } catch (e) {

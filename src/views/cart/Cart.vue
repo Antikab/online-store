@@ -1,3 +1,4 @@
+<!-- views/cart/Cart.vue -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useCartStore } from '@/stores/cart'

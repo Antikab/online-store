@@ -1,12 +1,15 @@
 <!-- App.vue -->
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import { Toaster } from 'vue-sonner'
+
 import Header from '@/components/Header.vue'
 </script>
 
 <template>
   <Header />
   <RouterView />
+  <Toaster position="top-right" richColors />
 </template>
 
 <style scoped>
