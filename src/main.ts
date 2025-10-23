@@ -1,38 +1,20 @@
-// main.ts
-import './assets/main.css'
+// src/main.ts
+import '@/app/styles/main.css'
 import 'vue-sonner/style.css'
+
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import App from '@/App.vue'
-import router from '@/router'
 
-// Stores
-import { useAuthStore } from '@/stores/auth'
-import { useProductsStore } from '@/stores/products'
-import { useCartStore } from '@/stores/cart'
-import { useWishlistStore } from '@/stores/wishlist'
-import { useCouponsStore } from '@/stores/coupons'
-import { useOrdersStore } from '@/stores/orders'
+import App from '@/app/App.vue'
+import router from '@/app/router'
+import { bootstrapDomain } from '@/app/providers/bootstrap'
 
 const app = createApp(App)
-app.use(createPinia())
+const pinia = createPinia()
+
+app.use(pinia)
 app.use(router)
 
-const auth = useAuthStore()
-const wishlist = useWishlistStore()
-const products = useProductsStore()
-const cart = useCartStore()
-const coupons = useCouponsStore()
-const orders = useOrdersStore()
-
-await auth.initAuthWatcher()
-await products.init()
-await wishlist.start()
-cart.start()
-coupons.start()
-await orders.init()
-
-// при изменении авторизации обновляем заказы
-auth.$subscribe(() => orders.init())
+await bootstrapDomain(pinia)
 
 app.mount('#app')
