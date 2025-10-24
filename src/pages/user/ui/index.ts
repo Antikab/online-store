@@ -1,0 +1,7 @@
+export { default as LoginPage } from './LoginPage.vue'
+export { default as RegisterPage } from './RegisterPage.vue'
+export { default as ResetPasswordPage } from './ResetPasswordPage.vue'
+export { default as RecoveryChangePasswordPage } from './RecoveryChangePasswordPage.vue'
+export { default as AccountChangePasswordPage } from './AccountChangePasswordPage.vue'
+export { default as WishlistPage } from './WishlistPage.vue'
+export { default as OrdersPage } from './OrdersPage.vue'
