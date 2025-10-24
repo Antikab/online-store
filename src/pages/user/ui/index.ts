@@ -1,0 +1,6 @@
+export { default as AuthChangePasswordPage } from './AuthChangePasswordPage.vue'
+export { default as ChangePasswordPage } from './ChangePasswordPage.vue'
+export { default as LoginPage } from './LoginPage.vue'
+export { default as OrdersPage } from './OrdersPage.vue'
+export { default as RegisterPage } from './RegisterPage.vue'
+export { default as ResetPasswordPage } from './ResetPasswordPage.vue'

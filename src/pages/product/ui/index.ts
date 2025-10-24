@@ -1,0 +1,5 @@
+export { default as CartPage } from './CartPage.vue'
+export { default as CheckoutPage } from './CheckoutPage.vue'
+export { default as CheckoutSuccessPage } from './CheckoutSuccessPage.vue'
+export { default as ProductDetailsPage } from './ProductDetailsPage.vue'
+export { default as WishlistPage } from './WishlistPage.vue'
