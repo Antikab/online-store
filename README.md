@@ -22,3 +22,16 @@ The database should contain tables that mirror the previous Firebase data:
 - `profiles`: optional profile metadata for each Supabase user.
 
 Row-level security policies should allow public read for catalogue tables and user-based access (`auth.uid() = user_id`) for personal data tables.
+
+## Architecture overview (2025 refresh)
+
+The client code now follows a feature-sliced setup that keeps domain logic, shared utilities and UI layers isolated:
+
+- `src/app` – application shell, providers and bootstrapping logic.
+- `src/entities` – Pinia stores and types for core business entities (auth, cart, orders, products, wishlist, coupons).
+- `src/features` – reusable feature logic such as catalog infinite scroll and auth helpers.
+- `src/pages` – route-level views grouped by domain.
+- `src/shared` – cross-cutting API clients, composables, utilities and primitive UI.
+- `src/widgets` – layout-level building blocks (e.g. the site header).
+
+This organisation keeps state initialisation inside `src/app/setup`, routes under `src/app/providers/router.ts`, and exposes entity stores through `src/entities/*/index.ts` so that features and pages depend on stable public APIs instead of deep file paths.
