@@ -1,7 +1,7 @@
 <!-- views/auth/ResetPassword.vue -->
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useSessionStore } from '@/entities/session'
+import { useSessionStore } from '@entities/session'
 
 const auth = useSessionStore()
 const email = ref('')

@@ -3,7 +3,7 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import { useSessionStore } from '@/entities/session'
+import { useSessionStore } from '@entities/session'
 
 const session = useSessionStore()
 const { loading, errorMessage, email } = storeToRefs(session)

@@ -2,16 +2,16 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { User } from '@supabase/supabase-js'
 
-import { supabase } from '@/shared/api/supabase/client'
-import { useSupabaseAuth } from '@/entities/session/lib/useSupabaseAuth'
+import { supabaseClient } from '@shared/api'
 
-type PublicUser = { uid: string; email: string | null }
+import { useSupabaseAuth } from '../lib/useSupabaseAuth'
+import type { SessionUser } from './types'
 
 export const useSessionStore = defineStore('session', () => {
   const { signIn, signUp, signOut, resetPassword, updatePassword, loading, errorMessage } =
     useSupabaseAuth('Auth')
 
-  const user = ref<PublicUser | null>(null)
+  const user = ref<SessionUser | null>(null)
   const ready = ref(false)
 
   const isAuthed = computed(() => !!user.value)
@@ -23,11 +23,11 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function initAuthWatcher() {
-    const { data, error } = await supabase.auth.getSession()
+    const { data, error } = await supabaseClient.auth.getSession()
     if (error) console.error('[Auth] getSession error:', error)
     if (data.session) setFromSupabase(data.session.user)
 
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
       setFromSupabase(session?.user ?? null)
       ready.value = true
     })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 
-import { useSessionStore } from '@/entities/session'
+import { useSessionStore } from '@entities/session'
 
 const session = useSessionStore()
 const { isAuthed, email } = storeToRefs(session)

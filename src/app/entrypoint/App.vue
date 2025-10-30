@@ -3,7 +3,7 @@
 import { RouterView } from 'vue-router'
 import { Toaster } from 'vue-sonner'
 
-import { SiteHeader } from '@/widgets/site-header'
+import { SiteHeader } from '@widgets/site-header'
 </script>
 
 <template>

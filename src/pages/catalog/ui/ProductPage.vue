@@ -3,8 +3,8 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { useProductStore } from '@/entities/product'
-import { useCartStore } from '@/features/cart'
+import { useProductStore } from '@entities/product'
+import { useCartStore } from '@features/cart'
 import emblaCarouselVue from 'embla-carousel-vue'
 
 /* 🔹 Данные продукта */

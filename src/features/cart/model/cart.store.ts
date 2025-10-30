@@ -1,10 +1,13 @@
 import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch, type WatchStopHandle } from 'vue'
 
-import { useSessionStore } from '@/entities/session'
-import type { Product } from '@/shared/model/product/types'
-import type { CartItem, CartItemKey } from '@/shared/model/cart/types'
-import { supabase } from '@/shared/api/supabase/client'
+import { useSessionStore } from '@entities/session'
+import type { Product } from '@shared/model'
+import type { CartItem, CartItemKey } from '@shared/model'
+import { supabaseClient } from '@shared/api'
+
+const GUEST_KEY = 'guest_cart_v1'
+const cidOf = (k: CartItemKey) => `${k.productId}_${k.color}_${k.size}`
 
 type CartRow = {
   user_id: string
@@ -17,9 +20,6 @@ type CartRow = {
   title: string
   image: string | null
 }
-
-const GUEST_KEY = 'guest_cart_v1'
-const cidOf = (k: CartItemKey) => `${k.productId}_${k.color}_${k.size}`
 
 function mapRow(row: CartRow): CartItem {
   const addedAt =
@@ -43,6 +43,11 @@ export const useCartStore = defineStore('cart', () => {
   let stopAuthWatch: WatchStopHandle | null = null
 
   const session = useSessionStore()
+  const { uid } = storeToRefs(session)
+
+  function cid(productId: string, color: string, size: string) {
+    return cidOf({ productId, color, size })
+  }
 
   function loadGuest() {
     try {
@@ -64,7 +69,7 @@ export const useCartStore = defineStore('cart', () => {
 
   async function refresh(uid: string) {
     loading.value = true
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('cart_items')
       .select('user_id,product_id,color,size,quantity,added_at,price,title,image')
       .eq('user_id', uid)
@@ -94,7 +99,7 @@ export const useCartStore = defineStore('cart', () => {
       title: it.title,
       image: it.image
     }))
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('cart_items')
       .upsert(rows, { onConflict: 'user_id,product_id,color,size' })
     if (error) throw error
@@ -129,7 +134,7 @@ export const useCartStore = defineStore('cart', () => {
     const newQty = existing ? existing.quantity + quantity : quantity
     items.value[cid] = { ...(existing || base), quantity: newQty }
 
-    const { error } = await supabase.from('cart_items').upsert(
+    const { error } = await supabaseClient.from('cart_items').upsert(
       {
         user_id: uid,
         product_id: product.id,
@@ -163,7 +168,7 @@ export const useCartStore = defineStore('cart', () => {
     if (!prev) return
     items.value[cid] = { ...prev, quantity }
 
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('cart_items')
       .update({ quantity })
       .eq('user_id', uid)
@@ -191,18 +196,14 @@ export const useCartStore = defineStore('cart', () => {
     if (!snapshot) return
     delete items.value[cid]
 
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('cart_items')
       .delete()
       .eq('user_id', uid)
       .eq('product_id', snapshot.productId)
       .eq('color', snapshot.color)
       .eq('size', snapshot.size)
-
-    if (error) {
-      items.value[cid] = snapshot
-      throw error
-    }
+    if (error) throw error
   }
 
   async function clear() {
@@ -210,57 +211,60 @@ export const useCartStore = defineStore('cart', () => {
       clearGuest()
       return
     }
+
     const uid = session.uid
     if (!uid) throw new Error('auth required')
 
     const snapshot = { ...items.value }
     items.value = {}
-    const { error } = await supabase.from('cart_items').delete().eq('user_id', uid)
+
+    const { error } = await supabaseClient.from('cart_items').delete().eq('user_id', uid)
     if (error) {
       items.value = snapshot
       throw error
     }
   }
 
-  const list = computed(() => Object.values(items.value))
-  const subtotal = computed(() => list.value.reduce((s, i) => s + i.price * i.quantity, 0))
-
   function start() {
     if (stopAuthWatch) return
-    const { uid } = storeToRefs(session)
-
-    if (session.uid) {
-      refresh(session.uid)
-      isGuest.value = false
-    } else {
-      loadGuest()
-    }
 
     stopAuthWatch = watch(
-      uid,
-      async (newUid, oldUid) => {
+      () => session.uid,
+      async (newUid) => {
         if (newUid) {
-          if (!oldUid && isGuest.value) {
-            try {
-              await syncGuestToUser(newUid)
-            } catch (e) {
-              console.error('Failed to merge guest cart', e)
-            }
-          } else {
-            await refresh(newUid)
-          }
           isGuest.value = false
+          await syncGuestToUser(newUid)
+          await refresh(newUid)
         } else {
           isGuest.value = true
+          clearGuest()
           loadGuest()
         }
       },
-      { immediate: false }
+      { immediate: true }
     )
   }
 
-  const cid = (productId: string, color: string, size: string) =>
-    cidOf({ productId, color, size })
+  function stop() {
+    stopAuthWatch?.()
+    stopAuthWatch = null
+  }
 
-  return { items, list, subtotal, isGuest, loading, start, add, setQty, removeItem, clear, cid }
+  const list = computed(() => Object.values(items.value))
+  const subtotal = computed(() => list.value.reduce((sum, item) => sum + item.price * item.quantity, 0))
+
+  return {
+    items,
+    list,
+    loading,
+    subtotal,
+    isGuest,
+    start,
+    stop,
+    add,
+    setQty,
+    removeItem,
+    clear,
+    cid
+  }
 })

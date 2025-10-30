@@ -1,32 +1,32 @@
-import { supabase } from '@/shared/api/supabase/client'
-import { useRequest } from '@/shared/lib/hooks/useRequest'
+import { supabaseClient } from '@shared/api'
+import { useRequest } from '@shared/lib/hooks'
 
 export function useSupabaseAuth(context = 'Auth') {
   const { loading, errorMessage, handleRequest } = useRequest(context)
 
   const signUp = (email: string, password: string) =>
     handleRequest(async () => {
-      const { data, error } = await supabase.auth.signUp({ email, password })
+      const { data, error } = await supabaseClient.auth.signUp({ email, password })
       if (error) throw error
       return data
     })
 
   const signIn = (email: string, password: string) =>
     handleRequest(async () => {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password })
       if (error) throw error
       return data
     })
 
   const signOut = () =>
     handleRequest(async () => {
-      const { error } = await supabase.auth.signOut()
+      const { error } = await supabaseClient.auth.signOut()
       if (error) throw error
     })
 
   const resetPassword = (email: string) =>
     handleRequest(async () => {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/change-password`
       })
       if (error) throw error
@@ -34,7 +34,7 @@ export function useSupabaseAuth(context = 'Auth') {
 
   const updatePassword = (newPassword: string) =>
     handleRequest(async () => {
-      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      const { error } = await supabaseClient.auth.updateUser({ password: newPassword })
       if (error) throw error
     })
 

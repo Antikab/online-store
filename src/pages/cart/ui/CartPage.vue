@@ -3,9 +3,9 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { useCartStore } from '@/features/cart'
-import { useCouponsStore } from '@/features/coupons'
-import { BaseLoader } from '@/shared/ui/loader'
+import { useCartStore } from '@features/cart'
+import { useCouponsStore } from '@features/coupons'
+import { BaseLoader } from '@shared/ui/loader'
 
 const cart = useCartStore()
 const coupons = useCouponsStore()

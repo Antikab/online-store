@@ -4,8 +4,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { useForm, useField } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import { z } from 'zod'
-import { useSessionStore } from '@/entities/session'
-import { useNotifier } from '@/shared/lib/notifications/useNotifier'
+import { useSessionStore } from '@entities/session'
+import { useNotifier } from '@shared/lib/notifications'
 
 const auth = useSessionStore()
 const { loading, errorMessage, isAuthed } = storeToRefs(auth)

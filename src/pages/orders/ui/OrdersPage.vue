@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { useOrdersStore } from '@/entities/order'
-import { BaseLoader } from '@/shared/ui/loader'
+import { useOrdersStore } from '@entities/order'
+import { BaseLoader } from '@shared/ui/loader'
 
 const orders = useOrdersStore()
 const list = computed(() => orders.list)
