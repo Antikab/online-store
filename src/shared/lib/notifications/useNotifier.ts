@@ -1,4 +1,4 @@
-// composables/useNotifier.ts
+// shared/lib/notifications/useNotifier.ts
 import { toast } from 'vue-sonner'
 
 export function useNotifier(context = 'App') {

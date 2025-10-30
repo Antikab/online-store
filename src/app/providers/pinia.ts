@@ -1,3 +1,4 @@
+// src/app/providers/pinia.ts
 import type { App } from 'vue'
 import { createPinia } from 'pinia'
 import type { Pinia } from 'pinia'

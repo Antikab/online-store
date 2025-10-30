@@ -1,3 +1,4 @@
+// src/app/providers/router.ts
 import type { App } from 'vue'
 import type { Router } from 'vue-router'
 

@@ -1,3 +1,5 @@
+// src/app/setup/initApp.ts
+
 import { useSessionStore } from '@/entities/session'
 import { useProductStore } from '@/entities/product'
 import { useOrdersStore } from '@/entities/order'
