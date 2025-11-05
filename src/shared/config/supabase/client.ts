@@ -1,13 +1,11 @@
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim()
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_PUB_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+if (!SUPABASE_URL || !SUPABASE_PUB_KEY) {
   throw new Error('Missing Supabase environment variables')
 }
 
-export const SUPABASE_CONFIG = Object.freeze({
+export const SUPABASE_CONFIG = {
   url: SUPABASE_URL,
-  anonKey: SUPABASE_ANON_KEY
-})
-
-export type SupabaseConfig = typeof SUPABASE_CONFIG
+  anonKey: SUPABASE_PUB_KEY
+}

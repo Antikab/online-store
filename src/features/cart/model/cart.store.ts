@@ -230,14 +230,16 @@ export const useCartStore = defineStore('cart', () => {
 
     stopAuthWatch = watch(
       () => session.uid,
-      async (newUid) => {
-        if (newUid) {
+      async (uid) => {
+        if (uid) {
           isGuest.value = false
-          await syncGuestToUser(newUid)
-          await refresh(newUid)
+          await syncGuestToUser(uid)
+          await refresh(uid)
         } else {
+          if (!isGuest.value) {
+            clearGuest()
+          }
           isGuest.value = true
-          clearGuest()
           loadGuest()
         }
       },
@@ -251,7 +253,9 @@ export const useCartStore = defineStore('cart', () => {
   }
 
   const list = computed(() => Object.values(items.value))
-  const subtotal = computed(() => list.value.reduce((sum, item) => sum + item.price * item.quantity, 0))
+  const subtotal = computed(() =>
+    list.value.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  )
 
   return {
     items,

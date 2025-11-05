@@ -1,3 +1,4 @@
+// src/entities/session/model/session.store.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { User } from '@supabase/supabase-js'
@@ -40,8 +41,8 @@ export const useSessionStore = defineStore('session', () => {
     if (data?.user) setFromSupabase(data.user)
   }
 
-  async function register(email: string, password: string) {
-    const data = await signUp(email, password)
+  async function register(email: string, password: string, firstname: string) {
+    const data = await signUp(email, password, firstname)
     if (data?.user) setFromSupabase(data.user)
   }
 

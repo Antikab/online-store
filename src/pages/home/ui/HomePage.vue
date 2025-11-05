@@ -33,7 +33,11 @@ const { items, loading } = useInfiniteProducts(filters, 4)
           :to="`/product/${item.id}`"
           class="block border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition"
         >
-          <img :src="item.imageUrls[0]" :alt="item.title" class="w-full aspect-square object-cover" />
+          <img
+            :src="item.imageUrls[0]"
+            :alt="item.title"
+            class="w-full aspect-square object-cover"
+          />
           <div class="p-3">
             <p class="font-medium text-gray-800 truncate">{{ item.title }}</p>
             <p class="text-sm text-gray-500">{{ item.price.toFixed(2) }} $</p>
