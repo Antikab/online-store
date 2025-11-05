@@ -6,6 +6,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import { z } from 'zod'
 import { useSessionStore } from '@entities/session'
 import { useNotifier } from '@shared/lib/notifications'
+import { ROUTE_NAMES } from '@shared/config'
 
 const auth = useSessionStore()
 const { loading, errorMessage, isAuthed } = storeToRefs(auth)
@@ -37,7 +38,7 @@ const onSubmit = handleSubmit(async (values) => {
 
   if (isAuthed.value) {
     notify.success('Добро пожаловать 👋')
-    router.push((route.query.redirect as string) || '/')
+    router.push((route.query.redirect as string) || { name: ROUTE_NAMES.HOME })
   } else if (errorMessage.value) {
     notify.error(errorMessage.value)
   }
