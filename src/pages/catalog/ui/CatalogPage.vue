@@ -3,10 +3,10 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { useProductStore } from '@/entities/product'
-import type { Gender } from '@/shared/model/product/types'
-import { useWishlistStore } from '@/features/wishlist'
-import { useInfiniteProducts } from '@/features/catalog/lib/useInfiniteProducts'
+import { useProductStore } from '@entities/product'
+import type { Gender } from '@shared/model'
+import { useWishlistStore } from '@features/wishlist'
+import { useInfiniteProducts } from '@features/catalog'
 
 const route = useRoute()
 const p = useProductStore()

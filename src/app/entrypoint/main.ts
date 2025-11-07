@@ -1,4 +1,4 @@
 // src/app/entrypoint/main.ts
-import { bootstrap } from '@app/bootstrap'
+import { bootstrap } from '@app'
 
 bootstrap()

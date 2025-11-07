@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useWishlistStore } from '@/features/wishlist'
-import { BaseLoader } from '@/shared/ui/loader'
+import { useWishlistStore } from '@features/wishlist'
+import { BaseLoader } from '@shared/ui/loader'
 
 const w = useWishlistStore()
 </script>

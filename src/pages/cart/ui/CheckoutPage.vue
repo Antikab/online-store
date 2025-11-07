@@ -1,19 +1,21 @@
 <!-- views/cart/Checkout.vue -->
 <script setup lang="ts">
-import { onMounted, reactive, computed, watch, ref } from 'vue'
+import { onMounted, computed, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { useSessionStore } from '@/entities/session'
-import { useCartStore } from '@/features/cart'
-import { useCouponsStore } from '@/features/coupons'
-import { useOrdersStore } from '@/entities/order'
-import type { DeliveryForm } from '@/shared/model/forms/delivery'
+import { useSessionStore } from '@entities/session'
+import { useCartStore } from '@features/cart'
+import { useCouponsStore } from '@features/coupons'
+import { useOrdersStore } from '@entities/order'
+import { useDeliveryForm } from '@shared/model'
 
 const router = useRouter()
 const auth = useSessionStore()
 const cart = useCartStore()
 const coupons = useCouponsStore()
 const orders = useOrdersStore()
+
+const { form, isValid } = useDeliveryForm()
 
 // если корзина пустая — по ТЗ редиректим на /cart (там пустое состояние)
 onMounted(() => {
@@ -27,22 +29,6 @@ watch(
     if (!ok) router.replace({ path: '/login', query: { redirect: '/checkout' } })
   },
   { immediate: true }
-)
-
-const form = reactive<DeliveryForm>({
-  fullName: '',
-  phone: '',
-  city: '',
-  address: '',
-  zip: ''
-})
-
-function validPhone(p: string) {
-  return /^(\+?\d{10,15})$/.test(p)
-}
-
-const isValidForm = computed(
-  () => !!form.fullName && !!form.city && !!form.address && validPhone(form.phone)
 )
 
 // скидка коэффициентом (0..1)
@@ -60,7 +46,7 @@ async function submit() {
   if (!cart.list.length) {
     return router.replace('/cart')
   }
-  if (!isValidForm.value) {
+  if (!isValid.value) {
     return alert('Проверьте обязательные поля и номер телефона')
   }
 
@@ -103,7 +89,7 @@ async function submit() {
         <input v-model="form.city" placeholder="City *" />
         <input v-model="form.address" placeholder="Address *" />
         <input v-model="form.zip" placeholder="ZIP" />
-        <button :disabled="placing || !isValidForm || !cart.list.length">
+        <button :disabled="placing || !isValid || !cart.list.length">
           {{ placing ? 'Processing...' : 'Continue to delivery' }}
         </button>
       </form>

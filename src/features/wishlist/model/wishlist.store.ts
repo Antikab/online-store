@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch, type WatchStopHandle } from 'vue'
 
-import { useSessionStore } from '@/entities/session'
-import { useProductStore } from '@/entities/product'
-import { supabase } from '@/shared/api/supabase/client'
-import { createStoragePublicUrls } from '@/shared/api/storage/publicUrl'
-import { SUPABASE_STORAGE_BUCKETS } from '@/shared/config/supabase/storage'
-import type { Product } from '@/shared/model/product/types'
+import { useSessionStore } from '@entities/session'
+import { useProductStore } from '@entities/product'
+import { supabaseClient } from '@shared/api'
+import { getPublicUrls } from '@shared/api'
+import { SUPABASE_STORAGE_BUCKETS } from '@shared/config'
+import type { Product } from '@shared/model'
 
 const GUEST_KEY = 'guest_wishlist_v1'
 const PRODUCT_BUCKET = SUPABASE_STORAGE_BUCKETS.productImages
@@ -36,7 +36,7 @@ export const useWishlistStore = defineStore('wishlist', () => {
   const productStore = useProductStore()
 
   function resolveProductImages(imageUrls: string[]) {
-    return createStoragePublicUrls(PRODUCT_BUCKET, imageUrls)
+    return getPublicUrls(PRODUCT_BUCKET, imageUrls)
   }
 
   function loadGuest() {
@@ -71,7 +71,7 @@ export const useWishlistStore = defineStore('wishlist', () => {
   async function refresh(uid: string) {
     loading.value = true
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('wishlists')
       .select(
         `
@@ -122,7 +122,7 @@ export const useWishlistStore = defineStore('wishlist', () => {
     const guestArr = Array.from(ids.value)
     if (!guestArr.length) return
 
-    const { data: existing } = await supabase
+    const { data: existing } = await supabaseClient
       .from('wishlists')
       .select('product_id')
       .eq('user_id', uid)
@@ -142,7 +142,7 @@ export const useWishlistStore = defineStore('wishlist', () => {
       added_at: new Date().toISOString()
     }))
 
-    const { error } = await supabase.from('wishlists').insert(rows)
+    const { error } = await supabaseClient.from('wishlists').insert(rows)
     if (error) console.error('[wishlist] syncGuestToUser error:', error)
 
     clearGuest()
@@ -172,7 +172,7 @@ export const useWishlistStore = defineStore('wishlist', () => {
     if (had) {
       ids.value.delete(id)
       products.value = products.value.filter((p) => p.id !== id)
-      const { error } = await supabase
+      const { error } = await supabaseClient
         .from('wishlists')
         .delete()
         .eq('user_id', uid)
@@ -181,7 +181,7 @@ export const useWishlistStore = defineStore('wishlist', () => {
     } else {
       ids.value.add(id)
 
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from('wishlists')
         .insert({
           user_id: uid,
@@ -199,72 +199,58 @@ export const useWishlistStore = defineStore('wishlist', () => {
           )
         `
         )
-        .single()
 
-      if (!error && data?.products) {
-        const raw = Array.isArray(data.products) ? data.products[0] : data.products
-        if (raw) {
-          const existing = productStore.byId?.(raw.id)
-          if (existing) products.value.push(existing)
-          else {
-            products.value.push({
-              id: raw.id,
-              title: raw.title,
-              price: Number(raw.price ?? 0),
-              gender: 'men',
-              category: '',
-              colors: [],
-              sizes: [],
-              description: '',
-              imageUrls: resolveProductImages(raw.image_urls ?? [])
-            })
-          }
-        }
-      } else if (error) {
+      if (error) {
         console.error('[wishlist] insert error', error)
+      } else {
+        const p = Array.isArray(data?.[0]?.products) ? data?.[0]?.products?.[0] : data?.[0]?.products
+        if (p) {
+          products.value.push({
+            id: p.id,
+            title: p.title,
+            price: Number(p.price ?? 0),
+            gender: 'men',
+            category: '',
+            colors: [],
+            sizes: [],
+            description: '',
+            imageUrls: resolveProductImages(p.image_urls ?? [])
+          })
+        }
       }
     }
   }
 
-  async function start() {
-    if (ready.value) return
-
-    if (session.uid) {
-      await refresh(session.uid)
-      isGuest.value = false
-    } else {
-      loadGuest()
-      isGuest.value = true
-    }
+  function start() {
+    if (stopAuthWatch) return
 
     stopAuthWatch = watch(
       () => session.uid,
-      async (newUid, oldUid) => {
-        if (newUid) {
-          if (oldUid === null && isGuest.value) {
-            await syncGuestToUser(newUid)
-          }
-          await refresh(newUid)
+      async (uid) => {
+        if (uid) {
           isGuest.value = false
+          await syncGuestToUser(uid)
+          await refresh(uid)
         } else {
+          if (!isGuest.value) {
+            clearGuest()
+          }
           isGuest.value = true
           loadGuest()
         }
       },
-      { immediate: false }
+      { immediate: true }
     )
   }
 
-  return {
-    ids,
-    idsArray,
-    products,
-    isGuest,
-    loading,
-    ready,
-    toggle,
-    start,
-    refresh,
-    isIn: (id: string) => ids.value.has(id)
+  function stop() {
+    stopAuthWatch?.()
+    stopAuthWatch = null
   }
+
+  function isIn(id: string) {
+    return ids.value.has(id)
+  }
+
+  return { ids: idsArray, products, loading, ready, isGuest, start, stop, toggle, isIn }
 })

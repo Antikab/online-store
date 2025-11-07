@@ -2,8 +2,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { supabase } from '@/shared/api/supabase/client'
-import { handleAuthError } from '@/shared/lib/errors/auth'
+
+import { supabaseClient } from '@shared/api'
+import { handleAuthError } from '@shared/lib/errors'
 
 const router = useRouter()
 const stage = ref<'checking' | 'ok' | 'done' | 'error'>('checking')
@@ -36,14 +37,14 @@ onMounted(async () => {
     return
   }
 
-  const { data } = await supabase.auth.getSession()
+  const { data } = await supabaseClient.auth.getSession()
   if (data.session) {
     cleanUrl()
     stage.value = 'ok'
     return
   }
 
-  supabase.auth.onAuthStateChange((event) => {
+  supabaseClient.auth.onAuthStateChange((event) => {
     if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
       cleanUrl()
       stage.value = 'ok'
@@ -59,10 +60,10 @@ const onSubmit = async () => {
   busy.value = true
   err.value = null
   try {
-    const { error } = await supabase.auth.updateUser({ password: pw.value })
+    const { error } = await supabaseClient.auth.updateUser({ password: pw.value })
     if (error) throw error
 
-    await supabase.auth.signOut()
+    await supabaseClient.auth.signOut()
     stage.value = 'done'
     setTimeout(() => router.push('/login'), 1200)
   } catch (e) {

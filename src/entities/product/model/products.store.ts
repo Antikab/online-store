@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-import { supabase } from '@/shared/api/supabase/client'
-import { createStoragePublicUrls } from '@/shared/api/storage/publicUrl'
-import { SUPABASE_STORAGE_BUCKETS } from '@/shared/config/supabase/storage'
-import { parseArray } from '@/shared/lib/utils/parseArray'
-import type { Product, Gender } from '@/shared/model/product/types'
+import { supabaseClient } from '@shared/api'
+import { getPublicUrls } from '@shared/api'
+import { SUPABASE_STORAGE_BUCKETS } from '@shared/config'
+import { parseArray } from '@shared/lib/utils'
+import type { Product, Gender } from '@shared/model'
 
 const PRODUCT_BUCKET = SUPABASE_STORAGE_BUCKETS.productImages
 
@@ -22,7 +22,7 @@ export const useProductStore = defineStore('products', () => {
 
   function mapImageUrls(imageField: unknown) {
     const images = parseArray(imageField)
-    return images.length ? createStoragePublicUrls(PRODUCT_BUCKET, images) : []
+    return images.length ? getPublicUrls(PRODUCT_BUCKET, images) : []
   }
 
   async function fetchPage({
@@ -47,7 +47,7 @@ export const useProductStore = defineStore('products', () => {
     const from = (page - 1) * perPage
     const to = from + perPage - 1
 
-    let q = supabase
+    let q = supabaseClient
       .from('products')
       .select(
         'id,title,gender,category,price,colors,sizes,image_urls,description,is_active,extra,video_url'
@@ -83,7 +83,7 @@ export const useProductStore = defineStore('products', () => {
   }
 
   async function fetchOne(id: string): Promise<Product | null> {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('products')
       .select(
         'id,title,gender,category,price,colors,sizes,image_urls,description,is_active,extra,video_url'
@@ -120,7 +120,7 @@ export const useProductStore = defineStore('products', () => {
   async function init() {
     if (loaded.value) return
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('products')
       .select('id,title,category,price,colors,sizes,image_urls,is_active')
       .eq('is_active', true)

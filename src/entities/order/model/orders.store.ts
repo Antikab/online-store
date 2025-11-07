@@ -1,9 +1,9 @@
 import { defineStore, storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 
-import { supabase } from '@/shared/api/supabase/client'
-import type { DeliveryForm } from '@/shared/model/forms/delivery'
-import { useSessionStore } from '@/entities/session'
+import { supabaseClient } from '@shared/api'
+import type { DeliveryForm } from '@shared/model'
+import { useSessionStore } from '@entities/session/@x/order'
 
 type OrderItem = {
   productId: string
@@ -56,7 +56,7 @@ export const useOrdersStore = defineStore('orders', () => {
 
   async function refresh(userId: string) {
     loading.value = true
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('orders')
       .select('*')
       .eq('user_id', userId)
@@ -101,7 +101,7 @@ export const useOrdersStore = defineStore('orders', () => {
       created_at: new Date(order.createdAt).toISOString()
     }
 
-    const { data, error } = await supabase.from('orders').insert(row).select('id').single()
+    const { data, error } = await supabaseClient.from('orders').insert(row).select('id').single()
     if (error) throw error
     list.value.unshift({ id: data!.id as string, ...order })
     return data!.id as string

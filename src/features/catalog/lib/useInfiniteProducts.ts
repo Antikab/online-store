@@ -1,8 +1,8 @@
 import { ref, watch, type Ref, onMounted } from 'vue'
 import { useInfiniteScroll } from '@vueuse/core'
 
-import { useProductStore } from '@/entities/product'
-import type { Product, Gender } from '@/shared/model/product/types'
+import { useProductStore } from '@entities/product'
+import type { Product, Gender } from '@shared/model'
 
 type Filters = {
   gender?: Gender

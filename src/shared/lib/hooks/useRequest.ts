@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-import { handleAuthError } from '@/shared/lib/errors/auth'
+import { handleAuthError } from '@shared/lib/errors'
 
 /**
  * Универсальный composable для обёртки любых асинхронных запросов.

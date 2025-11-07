@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { supabase } from '@/shared/api/supabase/client'
+import { supabaseClient } from '@shared/api'
 
 type CouponRow = { code: string; active: boolean; percent: number }
 
@@ -19,7 +19,7 @@ export const useCouponsStore = defineStore('coupons', () => {
   }
 
   async function fetchCoupon(c: string) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('coupons')
       .select('code, active, percent')
       .eq('code', c)
